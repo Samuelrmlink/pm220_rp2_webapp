@@ -63,30 +63,52 @@ function wrapLines(ctx, text, maxW, wrap) {
     return lines;
 }
 
-function lineHeight(size) {
-    return Math.max(1, Math.ceil(size * 1.2));
+/** Ink bounds from the alphabetic baseline. Avoid em-square / 1.2× line-height slack. */
+function glyphMetrics(ctx, text, size) {
+    const m = ctx.measureText(text || "Hg");
+    let ascent = m.actualBoundingBoxAscent;
+    let descent = m.actualBoundingBoxDescent;
+    if (!Number.isFinite(ascent) || ascent < 0) {
+        ascent = m.fontBoundingBoxAscent || size * 0.8;
+    }
+    if (!Number.isFinite(descent) || descent < 0) {
+        descent = m.fontBoundingBoxDescent || size * 0.2;
+    }
+    const width = text ? ctx.measureText(text).width : 0;
+    if (!text) {
+        ascent = m.fontBoundingBoxAscent || ascent;
+        descent = m.fontBoundingBoxDescent || descent;
+    }
+    return { width, ascent, descent, height: ascent + descent };
 }
 
-function blockMetrics(ctx, lines, size) {
-    const lh = lineHeight(size);
+function measureBlock(ctx, box, size, lw) {
+    ctx.font = fontCss(box, size);
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
+    const texts = wrapLines(ctx, box.text, lw, box.wrap);
+    const gap = texts.length > 1 ? Math.max(1, Math.round(size * 0.12)) : 0;
+    const lines = texts.map((text) => glyphMetrics(ctx, text, size));
     let blockW = 0;
-    for (const line of lines) {
-        blockW = Math.max(blockW, ctx.measureText(line).width);
+    let blockH = 0;
+    for (let i = 0; i < lines.length; i++) {
+        blockW = Math.max(blockW, lines[i].width);
+        blockH += lines[i].height;
+        if (i < lines.length - 1) {
+            blockH += gap;
+        }
     }
-    return { lineH: lh, blockH: lh * Math.max(lines.length, 1), blockW };
+    if (!lines.length) {
+        const empty = glyphMetrics(ctx, "", size);
+        lines.push(empty);
+        blockH = empty.height;
+    }
+    return { lines, texts, gap, blockW, blockH };
 }
 
 function layoutFits(ctx, box, size, lw, lh) {
-    ctx.font = fontCss(box, size);
-    const lines = wrapLines(ctx, box.text, lw, box.wrap);
-    const m = blockMetrics(ctx, lines, size);
-    if (m.blockH > lh + 0.01) {
-        return false;
-    }
-    if (m.blockW > lw + 0.01) {
-        return false;
-    }
-    return true;
+    const m = measureBlock(ctx, box, size, lw);
+    return m.blockH <= lh + 0.01 && m.blockW <= lw + 0.01;
 }
 
 export function autoFontSize(ctx, box, lw, lh) {
@@ -123,10 +145,9 @@ function drawBox(ctx, box) {
     ctx.clip();
     ctx.font = fontCss(box, size);
     ctx.fillStyle = "#000";
-    ctx.textBaseline = "top";
+    ctx.textBaseline = "alphabetic";
     ctx.textAlign = "left";
-    const lines = wrapLines(ctx, box.text, ls.w, box.wrap);
-    const m = blockMetrics(ctx, lines, size);
+    const m = measureBlock(ctx, box, size, ls.w);
     let y = 0;
     if (box.valign === "middle") {
         y = (ls.h - m.blockH) / 2;
@@ -134,19 +155,21 @@ function drawBox(ctx, box) {
         y = ls.h - m.blockH;
     }
     const ul = Math.max(1, Math.round(size / 12));
-    for (const line of lines) {
-        const tw = ctx.measureText(line).width;
+    for (let i = 0; i < m.texts.length; i++) {
+        const line = m.lines[i];
+        const text = m.texts[i];
         let x = 0;
         if (box.align === "center") {
-            x = (ls.w - tw) / 2;
+            x = (ls.w - line.width) / 2;
         } else if (box.align === "right") {
-            x = ls.w - tw;
+            x = ls.w - line.width;
         }
-        ctx.fillText(line, x, y);
-        if (box.underline && line) {
-            ctx.fillRect(x, y + size + 1, tw, ul);
+        const baseline = y + line.ascent;
+        ctx.fillText(text, x, baseline);
+        if (box.underline && text) {
+            ctx.fillRect(x, baseline + Math.max(1, Math.round(line.descent * 0.35)), line.width, ul);
         }
-        y += m.lineH;
+        y += line.height + m.gap;
     }
     ctx.restore();
 }
