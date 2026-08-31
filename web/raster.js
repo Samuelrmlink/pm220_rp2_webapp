@@ -82,21 +82,39 @@ function rotateCrisp(src, turns) {
     return cur;
 }
 
-/** Nearest-neighbor blit of a 1-bit source into an object box (integer module scale). */
+/**
+ * Fit a 1-bit source into the object box with nearest-neighbor sampling.
+ * Scale is continuous (fills the box); each dest dot is still fully black or white.
+ */
 export function blitCrisp(ctx, obj, src) {
     const g = geom(obj);
     const rot = ((Number(obj.rotate) || 0) % 360 + 360) % 360;
     const turns = Math.round(rot / 90) % 4;
     const bmp = turns ? rotateCrisp(src, turns) : src;
-    const scale = Math.max(1, Math.floor(Math.min(g.width / bmp.width, g.height / bmp.height)));
-    const dw = bmp.width * scale;
-    const dh = bmp.height * scale;
+    const scale = Math.min(g.width / bmp.width, g.height / bmp.height);
+    const dw = Math.max(1, Math.round(bmp.width * scale));
+    const dh = Math.max(1, Math.round(bmp.height * scale));
     const dx = g.x + Math.floor((g.width - dw) / 2);
     const dy = g.y + Math.floor((g.height - dh) / 2);
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(bmp, dx, dy, dw, dh);
-    ctx.restore();
+    const srcImg = bmp.getContext("2d").getImageData(0, 0, bmp.width, bmp.height);
+    const dest = ctx.createImageData(dw, dh);
+    const s = srcImg.data;
+    const d = dest.data;
+    const sw = bmp.width;
+    const sh = bmp.height;
+    for (let y = 0; y < dh; y++) {
+        const sy = Math.min(sh - 1, Math.floor((y + 0.5) * sh / dh));
+        for (let x = 0; x < dw; x++) {
+            const sx = Math.min(sw - 1, Math.floor((x + 0.5) * sw / dw));
+            const si = (sy * sw + sx) * 4;
+            const di = (y * dw + x) * 4;
+            d[di] = s[si];
+            d[di + 1] = s[si + 1];
+            d[di + 2] = s[si + 2];
+            d[di + 3] = 255;
+        }
+    }
+    ctx.putImageData(dest, dx, dy);
 }
 
 function fontCss(box, size) {
