@@ -67,11 +67,72 @@ GET  /api/status
 GET  /api/scan
 POST /api/scan
 GET  /api/printer
-GET  /api/media
+GET  /api/media                    label + framebuffer contract
+GET  /api/print                    same as /api/media
 GET  /api/print/test               print the inset frame (also POST)
 POST /api/printer/connect          optional {"address":"AA:BB:CC:DD:EE:FF"}
 POST /api/printer/disconnect
-POST /api/print                    application/octet-stream packed 1-bit, 48 bytes/row
+POST /api/print                    raw packed 1-bit framebuffer (see below)
 ```
 
-Print uses the same registration as the Linux CLI (offset X −1.25 mm, Y +3 mm, crop to the TSPL page). On the Plus 2 W, the USER button also fires the test frame while SPP is up.
+On the Plus 2 W, the USER button also fires the test frame while SPP is up.
+
+## Framebuffer print (`POST /api/print`)
+
+The Pico does **not** rasterize text or images. You send a pre-formatted 1-bit buffer; it wraps TSPL and applies the same die-cut registration as `nelko-pm220`.
+
+**Payload**
+
+| | |
+| --- | --- |
+| `Content-Type` | `application/octet-stream` |
+| Size | `width_bytes * height_dots`. Full 50×30 mm label: **11520 bytes** (48 × 240) |
+| Row | 384 dots = **48 bytes**, MSB first |
+| Polarity | **0 = burn (black)**, 1 = white. Unused bits in a row must be 1 (`0xFF` fill) |
+| Height | 1–240 rows. Send **240** for a full label. Shorter buffers are still offset/cropped as if they were a shorter image on the 30 mm page |
+
+`GET /api/media` returns the numbers, including `safe_rect` (4 mm inset on the 384×240 canvas) and `after_offset` (what the Pico actually burns).
+
+**Printable area (50×30 mm die-cut, 203 DPI)** — same as the Linux CLI:
+
+- Head is 48 mm / 384 dots; a 50 mm label is 400 dots, so the buffer is centered then shifted.
+- Registration: **X −1.25 mm, Y +3 mm**.
+- For a full 384×240 buffer that becomes **BITMAP 384×216 at (0, 24)** (bottom 24 rows of your canvas are cropped; the image starts 3 mm down from the leading edge; ~2 dots of left shift).
+- Keep ink inside `safe_rect` (`4 mm` inset). That rectangle is confirmed on-label.
+- Do not send a solid-black page; the firmware will punch a few white pixels if you do (thermal-head protection).
+
+```bash
+# inspect the contract
+curl http://192.168.7.1/api/media
+
+# send a 384x240 packed framebuffer
+python3 - <<'PY'
+from pathlib import Path
+import urllib.request
+
+W, H, WB = 384, 240, 48
+buf = bytearray(b"\xff" * (WB * H))  # white
+
+def set_black(x, y):
+    if 0 <= x < W and 0 <= y < H:
+        buf[y * WB + (x >> 3)] &= ~(0x80 >> (x & 7))
+
+# inset frame in the 4 mm safe margin (~32 dots)
+x0, y0, x1, y1 = 32, 32, 351, 207
+for t in range(3):
+    for x in range(x0, x1 + 1):
+        set_black(x, y0 + t); set_black(x, y1 - t)
+    for y in range(y0, y1 + 1):
+        set_black(x0 + t, y); set_black(x1 - t, y)
+
+req = urllib.request.Request(
+    "http://192.168.7.1/api/print",
+    data=bytes(buf),
+    method="POST",
+    headers={"Content-Type": "application/octet-stream"},
+)
+print(urllib.request.urlopen(req, timeout=5).read().decode())
+PY
+```
+
+Over the phone AP, use `http://192.168.4.1/api/print` instead. `http://pm220.local/api/print` works when mDNS resolves.

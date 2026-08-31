@@ -101,13 +101,17 @@ static bool start_test_print(void) {
     return bt_print_job(print_job, n);
 }
 
-static bool start_bitmap_print(size_t body_len) {
+static bool start_bitmap_print(size_t body_len, job_layout_t *layout) {
     if (body_len == 0 || body_len % TSPL_WIDTH_BYTES != 0) {
         return false;
     }
     int height = (int)(body_len / TSPL_WIDTH_BYTES);
+    if (height > TSPL_HEIGHT_DOTS) {
+        return false;
+    }
     size_t n = 0;
-    if (!job_from_bitmap(print_bitmap, TSPL_WIDTH_BYTES, height, print_job, sizeof(print_job), &n)) {
+    if (!job_from_bitmap(print_bitmap, TSPL_WIDTH_BYTES, height, print_job, sizeof(print_job), &n,
+                         layout)) {
         return false;
     }
     return bt_print_job(print_job, n);
@@ -157,6 +161,10 @@ static int dispatch(struct tcp_pcb *tpcb, const char *method, const char *path, 
         bt_printer_json(json_buf, sizeof(json_buf));
         return http_reply(tpcb, 200, "application/json", json_buf);
     }
+    if (path_is(path, "/api/print") && strcmp(method, "GET") == 0) {
+        job_media_json(json_buf, sizeof(json_buf));
+        return http_reply(tpcb, 200, "application/json", json_buf);
+    }
     if (path_is(path, "/api/print/test") &&
         (strcmp(method, "GET") == 0 || strcmp(method, "POST") == 0)) {
         if (!bt_is_connected()) {
@@ -175,21 +183,41 @@ static int dispatch(struct tcp_pcb *tpcb, const char *method, const char *path, 
             return http_reply(tpcb, 409, "application/json",
                               "{\"ok\":false,\"error\":\"not connected\"}");
         }
-        if (!start_bitmap_print(body_len)) {
+        if (bt_is_printing()) {
+            return http_reply(tpcb, 409, "application/json",
+                              "{\"ok\":false,\"error\":\"print in progress\"}");
+        }
+        if (body_len == 0 || body_len % TSPL_WIDTH_BYTES != 0 ||
+            body_len / TSPL_WIDTH_BYTES > (size_t)TSPL_HEIGHT_DOTS) {
+            snprintf(json_buf, sizeof(json_buf),
+                     "{\"ok\":false,\"error\":\"bitmap must be %d bytes/row, 1..%d rows "
+                     "(%d bytes for a full 50x30 mm label)\"}",
+                     TSPL_WIDTH_BYTES, TSPL_HEIGHT_DOTS, TSPL_BITMAP_MAX);
+            return http_reply(tpcb, 400, "application/json", json_buf);
+        }
+        job_layout_t layout;
+        if (!start_bitmap_print(body_len, &layout)) {
             snprintf(json_buf, sizeof(json_buf), "{\"ok\":false,\"error\":\"%s\"}",
                      bt_last_error()[0] ? bt_last_error() : "bad bitmap");
             return http_reply(tpcb, 400, "application/json", json_buf);
         }
-        snprintf(json_buf, sizeof(json_buf), "{\"ok\":true,\"bytes\":%u}", (unsigned)body_len);
+        snprintf(json_buf, sizeof(json_buf),
+                 "{\"ok\":true,\"bytes\":%u,\"width_bytes\":%d,\"height_dots\":%u,"
+                 "\"origin_x\":%d,\"origin_y\":%d,\"print_width_dots\":%d,"
+                 "\"print_height_dots\":%d}",
+                 (unsigned)body_len, TSPL_WIDTH_BYTES,
+                 (unsigned)(body_len / TSPL_WIDTH_BYTES),
+                 layout.origin_x, layout.origin_y,
+                 layout.print_width_dots, layout.print_height_dots);
         return http_reply(tpcb, 202, "application/json", json_buf);
     }
     if ((path_is(path, "/") || path_is(path, "/index.html")) && strcmp(method, "GET") == 0) {
         return http_reply(tpcb, 200, "text/plain",
                           "pm220-pico2w\nhttp://pm220.local/\n"
-                          "GET /api/status /api/scan /api/printer /api/media /api/print/test\n"
+                          "GET /api/status /api/scan /api/printer /api/media /api/print\n"
                           "POST /api/scan /api/printer/connect /api/printer/disconnect\n"
-                          "POST /api/print  (octet-stream packed 1-bit, 48 bytes/row)\n"
-                          "POST /api/print/test\n");
+                          "POST /api/print  application/octet-stream, packed 1-bit 48 bytes/row\n"
+                          "GET|POST /api/print/test\n");
     }
     return http_reply(tpcb, 404, "application/json", "{\"ok\":false,\"error\":\"not found\"}\n");
 }
