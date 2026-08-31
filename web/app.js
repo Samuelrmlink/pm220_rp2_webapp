@@ -1,6 +1,6 @@
 import { apiBase, fetchMedia, fetchStatus, postPrint } from "./api.js";
 import { Editor } from "./editor.js";
-import { rasterize } from "./raster.js";
+import { boxOverflows, rasterize } from "./raster.js";
 
 const SCALE = 2;
 const STORE = "pm220-editor-v1";
@@ -31,6 +31,7 @@ const editor = new Editor($("stage"), {
         fillForm();
         save();
     },
+    onSelect: (box) => focusText(box),
 });
 
 function layoutGuides() {
@@ -77,19 +78,40 @@ function paint() {
     pctx.putImageData(img, 0, 0);
 }
 
+function focusText(box) {
+    if (!box) {
+        return;
+    }
+    const el = $("text");
+    setTimeout(() => {
+        el.focus();
+        if (box.pristine) {
+            el.select();
+        } else {
+            const n = el.value.length;
+            el.setSelectionRange(n, n);
+        }
+    }, 0);
+}
+
 function fillForm() {
     const box = editor.selected();
-    $("none").hidden = !!box;
+    $("add-pane").hidden = !!box;
     $("form").hidden = !box;
     $("del").disabled = !box;
+    $("pane-title").textContent = box ? "Text box" : "Add object";
+    const clip = !!(box && !box.wrap && !box.autoSize);
+    const overflow = !!(box && boxOverflows(box, editor.safe));
+    $("warn-clip").hidden = !clip;
+    $("warn-overflow").hidden = !overflow;
+    $("warn").hidden = !clip && !overflow;
     if (!box) {
         return;
     }
     $("size").disabled = !!box.autoSize;
-    if ($("form").contains(document.activeElement)) {
-        return;
+    if (document.activeElement !== $("text")) {
+        $("text").value = box.text;
     }
-    $("text").value = box.text;
     $("font").value = box.font || "Arial";
     $("size").value = box.size;
     $("autoSize").checked = !!box.autoSize;
@@ -144,14 +166,35 @@ function restore() {
     } catch {
         /* ignore */
     }
-    editor.addBox();
 }
 
-$("form").addEventListener("input", () => {
+function syncAdvanced() {
+    $("coords").hidden = !$("advanced").checked;
+}
+
+$("form").addEventListener("input", (e) => {
+    const box = editor.selected();
+    if (e.target && e.target.id === "text" && box) {
+        box.pristine = false;
+    }
+    if (e.target && e.target.id === "advanced") {
+        try {
+            localStorage.setItem(STORE + "-advanced", $("advanced").checked ? "1" : "0");
+        } catch {
+            /* ignore */
+        }
+        syncAdvanced();
+        return;
+    }
     editor.updateSelected(readForm());
 });
 
-$("add").addEventListener("click", () => editor.addBox());
+function addTextBox() {
+    editor.addBox();
+}
+
+$("add").addEventListener("click", addTextBox);
+$("add-text").addEventListener("click", addTextBox);
 $("del").addEventListener("click", () => editor.removeSelected());
 
 document.addEventListener("keydown", (e) => {
@@ -206,6 +249,12 @@ $("print").addEventListener("click", async () => {
 });
 
 async function boot() {
+    try {
+        $("advanced").checked = localStorage.getItem(STORE + "-advanced") === "1";
+    } catch {
+        $("advanced").checked = false;
+    }
+    syncAdvanced();
     layoutGuides();
     restore();
     try {

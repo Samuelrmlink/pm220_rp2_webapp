@@ -23,8 +23,15 @@
             </div>
         </div>
         <aside id="props">
-            <h2>Text box</h2>
-            <p class="empty" id="none">Select or add a text box.</p>
+            <h2 id="pane-title">Add object</h2>
+            <div id="add-pane">
+                <p class="empty">Select an object on the label, or add one:</p>
+                <button type="button" id="add-text">Text box</button>
+            </div>
+            <div id="warn" hidden>
+                <p class="warn warn-overflow" id="warn-overflow" hidden>Box extends outside the printable area.</p>
+                <p class="warn warn-clip" id="warn-clip" hidden>Text may overrun this box (auto size and word wrap are off).</p>
+            </div>
             <form id="form" hidden>
                 <label for="text">Text</label>
                 <textarea id="text"></textarea>
@@ -72,23 +79,18 @@
                         </select>
                     </div>
                 </div>
-                <div class="row">
-                    <div>
-                        <label for="x1">x1</label>
-                        <input id="x1" type="number" step="1">
-                    </div>
-                    <div>
-                        <label for="y1">y1</label>
-                        <input id="y1" type="number" step="1">
-                    </div>
+                <div class="checks">
+                    <label><input type="checkbox" id="advanced"> Advanced</label>
                 </div>
-                <div class="row">
-                    <div>
+                <div id="coords" hidden>
+                    <div class="coords">
+                        <label for="x1">x1</label>
+                        <label for="y1">y1</label>
                         <label for="x2">x2</label>
-                        <input id="x2" type="number" step="1">
-                    </div>
-                    <div>
                         <label for="y2">y2</label>
+                        <input id="x1" type="number" step="1">
+                        <input id="y1" type="number" step="1">
+                        <input id="x2" type="number" step="1">
                         <input id="y2" type="number" step="1">
                     </div>
                 </div>

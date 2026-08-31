@@ -14,6 +14,7 @@ export function defaultBox(page, safe) {
     const y2 = Math.min(page.height_dots - 1, y1 + 72);
     return {
         id: nextId++,
+        type: "text",
         text: "Text",
         font: "Arial",
         size: 24,
@@ -25,6 +26,7 @@ export function defaultBox(page, safe) {
         valign: "top",
         wrap: true,
         rotate: 0,
+        pristine: true,
         x1, y1, x2, y2,
     };
 }
@@ -61,6 +63,7 @@ export class Editor {
         this.safe = opts.safe;
         this.scale = opts.scale || 2;
         this.onChange = opts.onChange || (() => {});
+        this.onSelect = opts.onSelect || (() => {});
         this.boxes = [];
         this.selectedId = null;
         this.drag = null;
@@ -99,9 +102,7 @@ export class Editor {
         }
         clampBox(box, this.page);
         this.boxes.push(box);
-        this.select(box.id);
-        this.syncDom();
-        this.onChange();
+        this.select(box.id, { focus: true });
         return box;
     }
 
@@ -119,10 +120,13 @@ export class Editor {
         return this.boxes.find((b) => b.id === this.selectedId) || null;
     }
 
-    select(id) {
+    select(id, opts) {
         this.selectedId = id;
         this.syncDom();
         this.onChange();
+        if (opts && opts.focus && id != null) {
+            this.onSelect(this.selected());
+        }
     }
 
     updateSelected(patch) {
@@ -144,10 +148,16 @@ export class Editor {
                 copy.id = nextId++;
             }
             nextId = Math.max(nextId, copy.id + 1);
+            if (!copy.type) {
+                copy.type = "text";
+            }
+            if (copy.pristine !== true) {
+                copy.pristine = false;
+            }
             clampBox(copy, this.page);
             this.boxes.push(copy);
         }
-        this.selectedId = this.boxes.length ? this.boxes[0].id : null;
+        this.selectedId = null;
         this.syncDom();
         this.onChange();
     }
@@ -160,6 +170,9 @@ export class Editor {
             el.className = "tbox";
             el.dataset.id = String(box.id);
             const overflow = boxOverflows(box, this.safe);
+            if (!box.wrap && !box.autoSize) {
+                el.classList.add("clip");
+            }
             if (overflow) {
                 el.classList.add("overflow");
             }
@@ -246,7 +259,17 @@ export class Editor {
         this.onChange();
     }
 
-    onUp() {
+    onUp(e) {
+        if (!this.drag) {
+            return;
+        }
+        const d = this.drag;
+        const moved = e
+            ? Math.hypot(e.clientX - d.px, e.clientY - d.py)
+            : 0;
         this.drag = null;
+        if (d.mode === "move" && moved < 6) {
+            this.onSelect(this.selected());
+        }
     }
 }
