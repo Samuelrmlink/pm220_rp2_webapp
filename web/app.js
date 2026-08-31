@@ -1,6 +1,13 @@
 import { apiBase, fetchMedia, fetchStatus, postPrint } from "./api.js";
-import { Editor } from "./editor.js";
+import { Editor, defaultBarcode, defaultImage, defaultQr, defaultText } from "./editor.js";
 import { boxOverflows, rasterize } from "./raster.js";
+import { downloadDocument, fromDocument, toDocument } from "./doc.js";
+import { code128Error } from "./barcode.js";
+import { qrError } from "./qr.js";
+import { importImageFile } from "./image.js";
+import "./barcode.js";
+import "./qr.js";
+import "./image.js";
 
 const SCALE = 2;
 const STORE = "pm220-editor-v1";
@@ -9,8 +16,18 @@ const FALLBACK_PAGE = {
     height_dots: 240,
     width_bytes: 48,
     bitmap_bytes: 11520,
+    dpi: 203,
+    width_mm: 50,
+    height_mm: 30,
     safe_rect: { x0: 32, y0: 32, x1: 351, y1: 207 },
     after_offset: { origin_x: 0, origin_y: 24, width_dots: 384, height_dots: 216 },
+};
+
+const TITLES = {
+    text: "Text box",
+    qr: "QR code",
+    barcode1d: "Barcode",
+    image: "Image",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -29,9 +46,9 @@ const editor = new Editor($("stage"), {
     onChange: () => {
         paint();
         fillForm();
-        save();
+        saveScratch();
     },
-    onSelect: (box) => focusText(box),
+    onSelect: (box) => focusPayload(box),
 });
 
 function layoutGuides() {
@@ -59,7 +76,7 @@ function layoutGuides() {
 }
 
 function paint() {
-    const r = rasterize(page, editor.boxes);
+    const r = rasterize(page, editor.boxes, () => paint());
     packed = r.packed;
     const w = page.width_dots;
     const h = page.height_dots;
@@ -78,11 +95,27 @@ function paint() {
     pctx.putImageData(img, 0, 0);
 }
 
-function focusText(box) {
+function payloadEl(box) {
     if (!box) {
+        return null;
+    }
+    if (box.type === "qr") {
+        return $("qr-payload");
+    }
+    if (box.type === "barcode1d") {
+        return $("bc-payload");
+    }
+    if (box.type === "text") {
+        return $("text");
+    }
+    return null;
+}
+
+function focusPayload(box) {
+    const el = payloadEl(box);
+    if (!el) {
         return;
     }
-    const el = $("text");
     setTimeout(() => {
         el.focus();
         if (box.pristine) {
@@ -94,65 +127,123 @@ function focusText(box) {
     }, 0);
 }
 
+function payloadWarning(box) {
+    if (!box) {
+        return "";
+    }
+    if (box.type === "qr") {
+        return qrError(box.payload);
+    }
+    if (box.type === "barcode1d") {
+        return code128Error(box.payload);
+    }
+    return "";
+}
+
 function fillForm() {
     const box = editor.selected();
     $("add-pane").hidden = !!box;
-    $("form").hidden = !box;
+    $("editor-pane").hidden = !box;
     $("del").disabled = !box;
-    $("pane-title").textContent = box ? "Text box" : "Add object";
-    const clip = !!(box && !box.wrap && !box.autoSize);
+    $("pane-title").textContent = box ? (TITLES[box.type] || box.type) : "Add object";
+    const clip = !!(box && box.type === "text" && !box.wrap && !box.autoSize);
     const overflow = !!(box && boxOverflows(box, editor.safe));
+    const payload = payloadWarning(box);
     $("warn-clip").hidden = !clip;
     $("warn-overflow").hidden = !overflow;
-    $("warn").hidden = !clip && !overflow;
+    $("warn-payload").hidden = !payload;
+    $("warn-payload").textContent = payload || "";
+    $("warn").hidden = !clip && !overflow && !payload;
+    $("form-text").hidden = !box || box.type !== "text";
+    $("form-qr").hidden = !box || box.type !== "qr";
+    $("form-barcode").hidden = !box || box.type !== "barcode1d";
+    $("form-image").hidden = !box || box.type !== "image";
     if (!box) {
         return;
     }
-    $("size").disabled = !!box.autoSize;
-    if (document.activeElement !== $("text")) {
-        $("text").value = box.text;
+    $("rotate").value = String(box.rotate || 0);
+    $("ox").value = box.x;
+    $("oy").value = box.y;
+    $("ow").value = box.width;
+    $("oh").value = box.height;
+    if (box.type === "text") {
+        $("size").disabled = !!box.autoSize;
+        const el = $("text");
+        if (document.activeElement !== el) {
+            el.value = box.text;
+        }
+        $("font").value = box.font || "Arial";
+        $("size").value = box.size;
+        $("autoSize").checked = !!box.autoSize;
+        $("wrap").checked = !!box.wrap;
+        $("bold").checked = !!box.bold;
+        $("italic").checked = !!box.italic;
+        $("underline").checked = !!box.underline;
+        $("align").value = box.align;
+        $("valign").value = box.valign;
+    } else if (box.type === "qr") {
+        if (document.activeElement !== $("qr-payload")) {
+            $("qr-payload").value = box.payload || "";
+        }
+        $("qr-ecc").value = box.ecc || "M";
+    } else if (box.type === "barcode1d") {
+        if (document.activeElement !== $("bc-payload")) {
+            $("bc-payload").value = box.payload || "";
+        }
+        $("bc-sym").value = box.symbology || "code128";
+        $("bc-text").checked = box.showText !== false;
+    } else if (box.type === "image") {
+        $("img-dither").checked = box.dither !== false;
     }
-    $("font").value = box.font || "Arial";
-    $("size").value = box.size;
-    $("autoSize").checked = !!box.autoSize;
-    $("wrap").checked = !!box.wrap;
-    $("bold").checked = !!box.bold;
-    $("italic").checked = !!box.italic;
-    $("underline").checked = !!box.underline;
-    $("align").value = box.align;
-    $("valign").value = box.valign;
-    $("rotate").value = String(box.rotate);
-    $("x1").value = box.x1;
-    $("y1").value = box.y1;
-    $("x2").value = box.x2;
-    $("y2").value = box.y2;
 }
 
 function readForm() {
-    return {
-        text: $("text").value,
-        font: $("font").value,
-        size: Number($("size").value),
-        autoSize: $("autoSize").checked,
-        wrap: $("wrap").checked,
-        bold: $("bold").checked,
-        italic: $("italic").checked,
-        underline: $("underline").checked,
-        align: $("align").value,
-        valign: $("valign").value,
+    const box = editor.selected();
+    if (!box) {
+        return {};
+    }
+    const patch = {
         rotate: Number($("rotate").value),
-        x1: Number($("x1").value),
-        y1: Number($("y1").value),
-        x2: Number($("x2").value),
-        y2: Number($("y2").value),
+        x: Number($("ox").value),
+        y: Number($("oy").value),
+        width: Number($("ow").value),
+        height: Number($("oh").value),
     };
+    if (box.type === "text") {
+        Object.assign(patch, {
+            text: $("text").value,
+            font: $("font").value,
+            size: Number($("size").value),
+            autoSize: $("autoSize").checked,
+            wrap: $("wrap").checked,
+            bold: $("bold").checked,
+            italic: $("italic").checked,
+            underline: $("underline").checked,
+            align: $("align").value,
+            valign: $("valign").value,
+        });
+    } else if (box.type === "qr") {
+        Object.assign(patch, {
+            payload: $("qr-payload").value,
+            ecc: $("qr-ecc").value,
+        });
+    } else if (box.type === "barcode1d") {
+        Object.assign(patch, {
+            payload: $("bc-payload").value,
+            symbology: $("bc-sym").value,
+            showText: $("bc-text").checked,
+        });
+    } else if (box.type === "image") {
+        patch.dither = $("img-dither").checked;
+    }
+    return patch;
 }
 
-function save() {
+function saveScratch() {
     try {
-        localStorage.setItem(STORE, JSON.stringify(editor.boxes));
+        localStorage.setItem(STORE, JSON.stringify(toDocument(page, editor.boxes)));
     } catch {
-        /* quota / private mode */
+        /* quota */
     }
 }
 
@@ -160,8 +251,7 @@ function restore() {
     try {
         const raw = localStorage.getItem(STORE);
         if (raw) {
-            editor.load(JSON.parse(raw));
-            return;
+            editor.load(fromDocument(JSON.parse(raw)));
         }
     } catch {
         /* ignore */
@@ -172,9 +262,12 @@ function syncAdvanced() {
     $("coords").hidden = !$("advanced").checked;
 }
 
-$("form").addEventListener("input", (e) => {
+$("editor-pane").addEventListener("input", (e) => {
     const box = editor.selected();
-    if (e.target && e.target.id === "text" && box) {
+    if (!box) {
+        return;
+    }
+    if (e.target && (e.target.id === "text" || e.target.id === "qr-payload" || e.target.id === "bc-payload")) {
         box.pristine = false;
     }
     if (e.target && e.target.id === "advanced") {
@@ -189,23 +282,67 @@ $("form").addEventListener("input", (e) => {
     editor.updateSelected(readForm());
 });
 
-function addTextBox() {
-    editor.addBox();
-}
+$("add-text").addEventListener("click", () => editor.addBox(defaultText(page, editor.safe)));
+$("add-qr").addEventListener("click", () => editor.addBox(defaultQr(page, editor.safe)));
+$("add-barcode").addEventListener("click", () => editor.addBox(defaultBarcode(page, editor.safe)));
+$("add-image").addEventListener("click", () => $("image-file").click());
+$("replace-image").addEventListener("click", () => $("image-file").click());
 
-$("add").addEventListener("click", addTextBox);
-$("add-text").addEventListener("click", addTextBox);
+$("image-file").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) {
+        return;
+    }
+    try {
+        const { png } = await importImageFile(file, () => paint());
+        const sel = editor.selected();
+        if (sel && sel.type === "image") {
+            editor.updateSelected({ png });
+        } else {
+            editor.addBox(defaultImage(page, editor.safe, png));
+        }
+    } catch (err) {
+        setStatus(String(err.message || err), "err");
+    }
+});
+
 $("del").addEventListener("click", () => editor.removeSelected());
 
+$("save").addEventListener("click", () => {
+    downloadDocument(toDocument(page, editor.boxes));
+});
+
+$("open").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) {
+        return;
+    }
+    try {
+        const text = await file.text();
+        editor.load(fromDocument(JSON.parse(text)));
+    } catch (err) {
+        setStatus(String(err.message || err), "err");
+    }
+});
+
 document.addEventListener("keydown", (e) => {
-    if (e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT")) {
+    const inField = e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT");
+    if (e.key === "Delete" && editor.selected()) {
+        e.preventDefault();
+        editor.removeSelected();
+        return;
+    }
+    if (inField) {
         if (e.key === "Escape") {
             e.target.blur();
             editor.select(null);
         }
         return;
     }
-    if (e.key === "Delete" || e.key === "Backspace") {
+    if (e.key === "Backspace" && editor.selected()) {
         e.preventDefault();
         editor.removeSelected();
     }
@@ -264,6 +401,9 @@ async function boot() {
             height_dots: media.height_dots,
             width_bytes: media.width_bytes,
             bitmap_bytes: media.bitmap_bytes,
+            dpi: media.dpi,
+            width_mm: media.width_mm,
+            height_mm: media.height_mm,
             safe_rect: media.safe_rect,
             after_offset: media.after_offset,
         };
@@ -273,7 +413,7 @@ async function boot() {
         layoutGuides();
         paint();
     } catch {
-        /* fallback page already in use */
+        /* fallback page */
     }
     await refreshStatus();
     setInterval(refreshStatus, 4000);

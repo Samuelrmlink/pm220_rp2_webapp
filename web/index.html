@@ -9,9 +9,12 @@
 <body>
     <header>
         <h1>PM220</h1>
-        <button type="button" id="add">+ Text</button>
+        <button type="button" id="open">Open</button>
+        <button type="button" id="save">Save</button>
         <button type="button" id="del">Delete</button>
         <button type="button" id="print" class="primary">Print</button>
+        <input id="file" type="file" accept=".json,.pm220.json,application/json" hidden>
+        <input id="image-file" type="file" accept="image/png,image/jpeg,image/*" hidden>
         <span id="status">connecting…</span>
     </header>
     <main>
@@ -27,24 +30,81 @@
             <div id="add-pane">
                 <p class="empty">Select an object on the label, or add one:</p>
                 <button type="button" id="add-text">Text box</button>
+                <button type="button" id="add-image">Image</button>
+                <button type="button" id="add-qr">QR code</button>
+                <button type="button" id="add-barcode">1D barcode</button>
             </div>
             <div id="warn" hidden>
                 <p class="warn warn-overflow" id="warn-overflow" hidden>Box extends outside the printable area.</p>
                 <p class="warn warn-clip" id="warn-clip" hidden>Text may overrun this box (auto size and word wrap are off).</p>
+                <p class="warn warn-clip" id="warn-payload" hidden></p>
             </div>
-            <form id="form" hidden>
-                <label for="text">Text</label>
-                <textarea id="text"></textarea>
-                <label for="font">Font</label>
-                <select id="font">
-                    <option value="Arial">Arial</option>
-                </select>
-                <div class="row">
-                    <div>
-                        <label for="size">Size (dots)</label>
-                        <input id="size" type="number" min="4" max="240" step="1">
+            <div id="editor-pane" hidden>
+                <form id="form-text" hidden>
+                    <label for="text">Text</label>
+                    <textarea id="text"></textarea>
+                    <label for="font">Font</label>
+                    <select id="font">
+                        <option value="Arial">Arial</option>
+                    </select>
+                    <label for="size">Size (dots)</label>
+                    <input id="size" type="number" min="4" max="240" step="1">
+                    <div class="checks">
+                        <label><input type="checkbox" id="autoSize"> Auto size</label>
+                        <label><input type="checkbox" id="wrap"> Word wrap</label>
+                        <label><input type="checkbox" id="bold"> Bold</label>
+                        <label><input type="checkbox" id="italic"> Italic</label>
+                        <label><input type="checkbox" id="underline"> Underline</label>
                     </div>
-                    <div>
+                    <div class="row">
+                        <div>
+                            <label for="align">Horizontal</label>
+                            <select id="align">
+                                <option value="left">Left</option>
+                                <option value="center">Center</option>
+                                <option value="right">Right</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="valign">Vertical</label>
+                            <select id="valign">
+                                <option value="top">Top</option>
+                                <option value="middle">Middle</option>
+                                <option value="bottom">Bottom</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+                <form id="form-qr" hidden>
+                    <label for="qr-payload">Contents</label>
+                    <textarea id="qr-payload"></textarea>
+                    <label for="qr-ecc">Error correction</label>
+                    <select id="qr-ecc">
+                        <option value="L">L (7%)</option>
+                        <option value="M" selected>M (15%)</option>
+                        <option value="Q">Q (25%)</option>
+                        <option value="H">H (30%)</option>
+                    </select>
+                </form>
+                <form id="form-barcode" hidden>
+                    <label for="bc-payload">Contents</label>
+                    <textarea id="bc-payload"></textarea>
+                    <label for="bc-sym">Symbology</label>
+                    <select id="bc-sym">
+                        <option value="code128">Code 128</option>
+                    </select>
+                    <div class="checks">
+                        <label><input type="checkbox" id="bc-text"> Show text</label>
+                    </div>
+                </form>
+                <form id="form-image" hidden>
+                    <button type="button" id="replace-image">Replace image</button>
+                    <div class="checks">
+                        <label><input type="checkbox" id="img-dither"> Dither</label>
+                    </div>
+                </form>
+                <form id="form-common">
+                    <div id="common-rotate-wrap">
                         <label for="rotate">Rotation</label>
                         <select id="rotate">
                             <option value="0">0°</option>
@@ -53,48 +113,23 @@
                             <option value="270">270°</option>
                         </select>
                     </div>
-                </div>
-                <div class="checks">
-                    <label><input type="checkbox" id="autoSize"> Auto size</label>
-                    <label><input type="checkbox" id="wrap"> Word wrap</label>
-                    <label><input type="checkbox" id="bold"> Bold</label>
-                    <label><input type="checkbox" id="italic"> Italic</label>
-                    <label><input type="checkbox" id="underline"> Underline</label>
-                </div>
-                <div class="row">
-                    <div>
-                        <label for="align">Horizontal</label>
-                        <select id="align">
-                            <option value="left">Left</option>
-                            <option value="center">Center</option>
-                            <option value="right">Right</option>
-                        </select>
+                    <div class="checks">
+                        <label><input type="checkbox" id="advanced"> Advanced</label>
                     </div>
-                    <div>
-                        <label for="valign">Vertical</label>
-                        <select id="valign">
-                            <option value="top">Top</option>
-                            <option value="middle">Middle</option>
-                            <option value="bottom">Bottom</option>
-                        </select>
+                    <div id="coords" hidden>
+                        <div class="coords">
+                            <label for="ox">x</label>
+                            <label for="oy">y</label>
+                            <label for="ow">w</label>
+                            <label for="oh">h</label>
+                            <input id="ox" type="number" step="1">
+                            <input id="oy" type="number" step="1">
+                            <input id="ow" type="number" step="1" min="8">
+                            <input id="oh" type="number" step="1" min="8">
+                        </div>
                     </div>
-                </div>
-                <div class="checks">
-                    <label><input type="checkbox" id="advanced"> Advanced</label>
-                </div>
-                <div id="coords" hidden>
-                    <div class="coords">
-                        <label for="x1">x1</label>
-                        <label for="y1">y1</label>
-                        <label for="x2">x2</label>
-                        <label for="y2">y2</label>
-                        <input id="x1" type="number" step="1">
-                        <input id="y1" type="number" step="1">
-                        <input id="x2" type="number" step="1">
-                        <input id="y2" type="number" step="1">
-                    </div>
-                </div>
-            </form>
+                </form>
+            </div>
         </aside>
     </main>
     <script type="module" src="app.js"></script>

@@ -79,7 +79,7 @@ On the Plus 2 W, the USER button also fires the test frame while SPP is up.
 
 ## Label editor (PC)
 
-Vanilla HTML/CSS/JS in `web/`. Rasterizes text boxes in the browser and `POST`s the packed framebuffer. The Pico does not serve these files yet.
+Vanilla HTML/CSS/JS in `web/`. Rasterizes objects in the browser and `POST`s the packed framebuffer. The Pico does not serve these files yet.
 
 ```bash
 python3 tools/dev_server.py
@@ -87,6 +87,8 @@ python3 tools/dev_server.py
 ```
 
 Use `?api=http://192.168.4.1` on the phone AP, or `http://pm220.local` when mDNS works. Stdlib only; no npm.
+
+**Save / Open** writes a single `label.pm220.json`: text, QR and Code 128 store their strings; images store a downscaled grayscale PNG (base64). Objects use `x`, `y`, `width`, `height` in dots.
 
 ## Framebuffer print (`POST /api/print`)
 

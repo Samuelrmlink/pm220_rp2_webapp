@@ -2,26 +2,101 @@
 
 export const FONT_STACK = "Arial, Helvetica, sans-serif";
 
+/** Canonical geometry. Migrates legacy x1/y1/x2/y2 in place. */
+export function geom(obj) {
+    if (obj.x == null && obj.x1 != null) {
+        obj.x = obj.x1;
+        obj.y = obj.y1;
+        obj.width = obj.x2 - obj.x1 + 1;
+        obj.height = obj.y2 - obj.y1 + 1;
+    }
+    const x = Number(obj.x) || 0;
+    const y = Number(obj.y) || 0;
+    const width = Math.max(1, Number(obj.width) || 1);
+    const height = Math.max(1, Number(obj.height) || 1);
+    return { x, y, width, height, x1: x, y1: y, x2: x + width - 1, y2: y + height - 1 };
+}
+
 export function boxWidth(box) {
-    return box.x2 - box.x1 + 1;
+    return geom(box).width;
 }
 
 export function boxHeight(box) {
-    return box.y2 - box.y1 + 1;
+    return geom(box).height;
 }
 
 /** Layout size in the unrotated text space. */
 export function layoutSize(box) {
-    const w = boxWidth(box);
-    const h = boxHeight(box);
+    const g = geom(box);
     if (box.rotate === 90 || box.rotate === 270) {
-        return { w: h, h: w };
+        return { w: g.height, h: g.width };
     }
-    return { w, h };
+    return { w: g.width, h: g.height };
 }
 
 export function boxOverflows(box, safe) {
-    return box.x1 < safe.x0 || box.y1 < safe.y0 || box.x2 > safe.x1 || box.y2 > safe.y1;
+    const g = geom(box);
+    return g.x1 < safe.x0 || g.y1 < safe.y0 || g.x2 > safe.x1 || g.y2 > safe.y1;
+}
+
+export function withBox(ctx, obj, fn) {
+    const g = geom(obj);
+    const ls = layoutSize(obj);
+    ctx.save();
+    ctx.translate(g.x + g.width / 2, g.y + g.height / 2);
+    ctx.rotate((Number(obj.rotate) || 0) * Math.PI / 180);
+    ctx.translate(-ls.w / 2, -ls.h / 2);
+    ctx.beginPath();
+    ctx.rect(0, 0, ls.w, ls.h);
+    ctx.clip();
+    fn(ctx, ls);
+    ctx.restore();
+}
+
+function rotateCrisp(src, turns) {
+    turns = ((turns % 4) + 4) % 4;
+    let cur = src;
+    for (let t = 0; t < turns; t++) {
+        const w = cur.width;
+        const h = cur.height;
+        const s = cur.getContext("2d").getImageData(0, 0, w, h);
+        const next = document.createElement("canvas");
+        next.width = h;
+        next.height = w;
+        const out = next.getContext("2d").createImageData(h, w);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const si = (y * w + x) * 4;
+                const nx = h - 1 - y;
+                const ny = x;
+                const di = (ny * h + nx) * 4;
+                out.data[di] = s.data[si];
+                out.data[di + 1] = s.data[si + 1];
+                out.data[di + 2] = s.data[si + 2];
+                out.data[di + 3] = s.data[si + 3];
+            }
+        }
+        next.getContext("2d").putImageData(out, 0, 0);
+        cur = next;
+    }
+    return cur;
+}
+
+/** Nearest-neighbor blit of a 1-bit source into an object box (integer module scale). */
+export function blitCrisp(ctx, obj, src) {
+    const g = geom(obj);
+    const rot = ((Number(obj.rotate) || 0) % 360 + 360) % 360;
+    const turns = Math.round(rot / 90) % 4;
+    const bmp = turns ? rotateCrisp(src, turns) : src;
+    const scale = Math.max(1, Math.floor(Math.min(g.width / bmp.width, g.height / bmp.height)));
+    const dw = bmp.width * scale;
+    const dh = bmp.height * scale;
+    const dx = g.x + Math.floor((g.width - dw) / 2);
+    const dy = g.y + Math.floor((g.height - dh) / 2);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bmp, dx, dy, dw, dh);
+    ctx.restore();
 }
 
 function fontCss(box, size) {
@@ -128,53 +203,50 @@ export function autoFontSize(ctx, box, lw, lh) {
     return best;
 }
 
-function drawBox(ctx, box) {
-    const ls = layoutSize(box);
-    if (ls.w < 1 || ls.h < 1) {
-        return;
-    }
-    const size = box.autoSize ? autoFontSize(ctx, box, ls.w, ls.h) : Math.max(1, Number(box.size) || 12);
-    const cx = (box.x1 + box.x2 + 1) / 2;
-    const cy = (box.y1 + box.y2 + 1) / 2;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate((Number(box.rotate) || 0) * Math.PI / 180);
-    ctx.translate(-ls.w / 2, -ls.h / 2);
-    ctx.beginPath();
-    ctx.rect(0, 0, ls.w, ls.h);
-    ctx.clip();
-    ctx.font = fontCss(box, size);
-    ctx.fillStyle = "#000";
-    ctx.textBaseline = "alphabetic";
-    ctx.textAlign = "left";
-    const m = measureBlock(ctx, box, size, ls.w);
-    let y = 0;
-    if (box.valign === "middle") {
-        y = (ls.h - m.blockH) / 2;
-    } else if (box.valign === "bottom") {
-        y = ls.h - m.blockH;
-    }
-    const ul = Math.max(1, Math.round(size / 12));
-    for (let i = 0; i < m.texts.length; i++) {
-        const line = m.lines[i];
-        const text = m.texts[i];
-        let x = 0;
-        if (box.align === "center") {
-            x = (ls.w - line.width) / 2;
-        } else if (box.align === "right") {
-            x = ls.w - line.width;
+export function drawText(ctx, box) {
+    withBox(ctx, box, (c, ls) => {
+        if (ls.w < 1 || ls.h < 1) {
+            return;
         }
-        const baseline = y + line.ascent;
-        ctx.fillText(text, x, baseline);
-        if (box.underline && text) {
-            ctx.fillRect(x, baseline + Math.max(1, Math.round(line.descent * 0.35)), line.width, ul);
+        const size = box.autoSize ? autoFontSize(c, box, ls.w, ls.h) : Math.max(1, Number(box.size) || 12);
+        c.font = fontCss(box, size);
+        c.fillStyle = "#000";
+        c.textBaseline = "alphabetic";
+        c.textAlign = "left";
+        const m = measureBlock(c, box, size, ls.w);
+        let y = 0;
+        if (box.valign === "middle") {
+            y = (ls.h - m.blockH) / 2;
+        } else if (box.valign === "bottom") {
+            y = ls.h - m.blockH;
         }
-        y += line.height + m.gap;
-    }
-    ctx.restore();
+        const ul = Math.max(1, Math.round(size / 12));
+        for (let i = 0; i < m.texts.length; i++) {
+            const line = m.lines[i];
+            const text = m.texts[i];
+            let x = 0;
+            if (box.align === "center") {
+                x = (ls.w - line.width) / 2;
+            } else if (box.align === "right") {
+                x = ls.w - line.width;
+            }
+            const baseline = y + line.ascent;
+            c.fillText(text, x, baseline);
+            if (box.underline && text) {
+                c.fillRect(x, baseline + Math.max(1, Math.round(line.descent * 0.35)), line.width, ul);
+            }
+            y += line.height + m.gap;
+        }
+    });
 }
 
-export function rasterize(page, boxes) {
+const drawers = { text: drawText };
+
+export function registerDrawer(type, fn) {
+    drawers[type] = fn;
+}
+
+export function rasterize(page, objects, onReady) {
     const w = page.width_dots;
     const h = page.height_dots;
     const canvas = document.createElement("canvas");
@@ -184,8 +256,9 @@ export function rasterize(page, boxes) {
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, w, h);
-    for (const box of boxes) {
-        drawBox(ctx, box);
+    for (const obj of objects) {
+        const draw = drawers[obj.type] || drawText;
+        draw(ctx, obj, onReady);
     }
     const img = ctx.getImageData(0, 0, w, h);
     const wb = page.width_bytes;
