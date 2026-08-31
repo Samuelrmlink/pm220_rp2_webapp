@@ -112,6 +112,38 @@ bool fs_valid_name(const char *name) {
     return true;
 }
 
+bool fs_valid_path(const char *path) {
+    if (!path || !path[0] || strlen(path) > FS_NAME_MAX) {
+        return false;
+    }
+    const char *slash = strchr(path, '/');
+    if (!slash) {
+        return fs_valid_name(path);
+    }
+    if (slash == path || strchr(slash + 1, '/')) {
+        return false;
+    }
+    size_t dlen = (size_t)(slash - path);
+    if (dlen != strlen(FS_LABELS_DIR) || strncmp(path, FS_LABELS_DIR, dlen) != 0) {
+        return false;
+    }
+    return fs_valid_name(slash + 1);
+}
+
+bool fs_is_dir(const char *path) {
+    if (!mounted) {
+        return false;
+    }
+    if (!path || !path[0] || strcmp(path, "/") == 0) {
+        return true;
+    }
+    if (strcmp(path, FS_LABELS_DIR) != 0) {
+        return false;
+    }
+    struct lfs_info info;
+    return lfs_stat(&lfs, FS_LABELS_DIR, &info) >= 0 && info.type == LFS_TYPE_DIR;
+}
+
 static void cfg_init(void) {
     memset(&cfg, 0, sizeof(cfg));
     cfg.read = bd_read;
@@ -147,24 +179,45 @@ bool fs_init(void) {
         }
     }
     mounted = true;
+    err = lfs_mkdir(&lfs, FS_LABELS_DIR);
+    if (err && err != LFS_ERR_EXIST) {
+        printf("fs: mkdir %s %d\n", FS_LABELS_DIR, err);
+    }
     printf("fs: mounted 1MB at flash 0x%lx\n", (unsigned long)FS_FLASH_OFF);
     return true;
 }
 
-int fs_list_json(char *buf, size_t cap) {
+int fs_list_json(const char *dir, char *buf, size_t cap) {
     if (!mounted || !buf || cap < 16) {
         return -1;
     }
+    const char *open_path = "/";
+    const char *shown = "";
+    if (dir && dir[0] && strcmp(dir, "/") != 0) {
+        if (!fs_is_dir(dir)) {
+            return -1;
+        }
+        open_path = dir;
+        shown = dir;
+    }
     size_t n = 0;
-    n += (size_t)snprintf(buf + n, cap - n, "{\"files\":[");
-    lfs_dir_t dir;
-    if (lfs_dir_open(&lfs, &dir, "/") < 0) {
-        snprintf(buf, cap, "{\"files\":[]}");
+    if (shown[0]) {
+        n += (size_t)snprintf(buf + n, cap - n, "{\"dir\":\"%s\",\"files\":[", shown);
+    } else {
+        n += (size_t)snprintf(buf + n, cap - n, "{\"files\":[");
+    }
+    lfs_dir_t ldir;
+    if (lfs_dir_open(&lfs, &ldir, open_path) < 0) {
+        if (shown[0]) {
+            snprintf(buf, cap, "{\"dir\":\"%s\",\"files\":[]}", shown);
+        } else {
+            snprintf(buf, cap, "{\"files\":[]}");
+        }
         return 0;
     }
     struct lfs_info info;
     int first = 1;
-    while (lfs_dir_read(&lfs, &dir, &info) > 0) {
+    while (lfs_dir_read(&lfs, &ldir, &info) > 0) {
         if (info.type != LFS_TYPE_REG) {
             continue;
         }
@@ -178,13 +231,13 @@ int fs_list_json(char *buf, size_t cap) {
             break;
         }
     }
-    lfs_dir_close(&lfs, &dir);
+    lfs_dir_close(&lfs, &ldir);
     n += (size_t)snprintf(buf + n, cap - n, "]}");
     return 0;
 }
 
 bool fs_stat(const char *name, size_t *size) {
-    if (!mounted || !fs_valid_name(name)) {
+    if (!mounted || !fs_valid_path(name)) {
         return false;
     }
     struct lfs_info info;
@@ -198,15 +251,32 @@ bool fs_stat(const char *name, size_t *size) {
 }
 
 int fs_delete(const char *name) {
-    if (!mounted || !fs_valid_name(name)) {
+    if (!mounted || !fs_valid_path(name) || fs_is_dir(name)) {
         return -1;
     }
     int err = lfs_remove(&lfs, name);
     return err < 0 ? err : 0;
 }
 
+int fs_rename(const char *from, const char *to) {
+    if (!mounted || !fs_valid_path(from) || !fs_valid_path(to)) {
+        return -1;
+    }
+    if (strcmp(from, to) == 0) {
+        return 0;
+    }
+    if (fs_stat(to, NULL)) {
+        return 1;
+    }
+    int err = lfs_rename(&lfs, from, to);
+    if (err == LFS_ERR_EXIST) {
+        return 1;
+    }
+    return err < 0 ? err : 0;
+}
+
 int fs_begin_write(const char *name) {
-    if (!mounted || !fs_valid_name(name) || wopen) {
+    if (!mounted || !fs_valid_path(name) || fs_is_dir(name) || wopen) {
         return -1;
     }
     int err = lfs_file_open(&lfs, &wfile, name, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
@@ -250,7 +320,7 @@ void fs_abort_write(void) {
 }
 
 int fs_begin_read(const char *name, size_t *size) {
-    if (!mounted || !fs_valid_name(name)) {
+    if (!mounted || !fs_valid_path(name)) {
         return -1;
     }
     int h = -1;

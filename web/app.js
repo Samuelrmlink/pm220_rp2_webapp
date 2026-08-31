@@ -1,7 +1,8 @@
 import { apiBase, fetchMedia, fetchStatus, postPrint } from "./api.js";
 import { Editor, defaultBarcode, defaultImage, defaultQr, defaultText } from "./editor.js";
 import { boxOverflows, rasterize } from "./raster.js";
-import { downloadDocument, fromDocument, toDocument } from "./doc.js";
+import { fromDocument, toDocument } from "./doc.js";
+import { bindPicker } from "./files.js";
 import { code128Error } from "./barcode.js";
 import { qrError } from "./qr.js";
 import { importImageFile } from "./image.js";
@@ -322,11 +323,15 @@ $("image-file").addEventListener("change", async (e) => {
 
 $("del").addEventListener("click", () => editor.removeSelected());
 
-$("save").addEventListener("click", () => {
-    downloadDocument(toDocument(page, editor.boxes));
+let picoName = "";
+const picker = bindPicker({
+    getDoc: () => toDocument(page, editor.boxes),
+    loadDoc: (objects) => editor.load(objects),
+    picoName: () => picoName,
+    setPicoName: (name) => { picoName = name; },
+    setStatus,
 });
 
-$("open").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
@@ -336,12 +341,17 @@ $("file").addEventListener("change", async (e) => {
     try {
         const text = await file.text();
         editor.load(fromDocument(JSON.parse(text)));
+        picoName = file.name.replace(/\.gz$/i, "");
+        setStatus(`opened ${picoName}`, "ok");
     } catch (err) {
         setStatus(String(err.message || err), "err");
     }
 });
 
 document.addEventListener("keydown", (e) => {
+    if (picker.isOpen()) {
+        return;
+    }
     const inField = e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT");
     if (e.key === "Delete" && editor.selected()) {
         e.preventDefault();

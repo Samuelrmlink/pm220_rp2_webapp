@@ -17,6 +17,24 @@
         <input id="image-file" type="file" accept="image/png,image/jpeg,image/*" hidden>
         <span id="status">connecting…</span>
     </header>
+    <div id="picker" hidden>
+        <div class="picker-backdrop"></div>
+        <div class="picker-panel" role="dialog" aria-labelledby="picker-title">
+            <h2 id="picker-title">Open label</h2>
+            <p id="picker-err" class="picker-err" hidden></p>
+            <ul id="picker-list"></ul>
+            <p id="picker-empty" class="picker-empty" hidden>No labels on the Pico yet.</p>
+            <div id="picker-save-row" hidden>
+                <label for="picker-name">Name</label>
+                <input id="picker-name" type="text" spellcheck="false" autocomplete="off">
+            </div>
+            <div class="picker-actions">
+                <button type="button" id="picker-pc">This computer…</button>
+                <button type="button" id="picker-save" class="primary">Save</button>
+                <button type="button" id="picker-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
     <main>
         <div class="stage-wrap">
             <div class="stage" id="stage">

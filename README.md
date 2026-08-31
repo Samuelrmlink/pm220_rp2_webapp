@@ -73,9 +73,12 @@ GET  /api/print/test               print the inset frame (also POST)
 POST /api/printer/connect          optional {"address":"AA:BB:CC:DD:EE:FF"}
 POST /api/printer/disconnect
 POST /api/print                    raw packed 1-bit framebuffer (see below)
-GET  /api/fs                       list LittleFS files
-PUT  /api/fs/<name>                create or replace (max 64 KiB)
+GET  /api/fs                       list LittleFS files (root)
+GET  /api/fs/labels                list saved labels
+GET  /api/fs/labels/<file>         file bytes (`*.gz` has Content-Encoding: gzip)
+PUT  /api/fs/<name>                create or replace (max 128 KiB; `labels/<file>` ok)
 DELETE /api/fs/<name>
+POST /api/fs/rename                {"from":"labels/a.json.gz","to":"labels/b.json.gz"}
 GET  /                             index.html from LittleFS when present
 ```
 
@@ -105,6 +108,8 @@ python3 tools/pack_web.py --list
 ```
 
 `PUT` replaces an existing name. After upload, `http://192.168.7.1/` (or the AP / `.local` URL) serves `index.html.gz` with `Content-Encoding: gzip`. Same-origin `fetch` is used when the editor is served from the Pico; `?api=` still overrides on the PC dev server.
+
+Open/Save in the editor talk to `labels/` on LittleFS (gzipped JSON). **This computer…** / **Download current** still use a local file. Each saved label can be downloaded to the PC as `.json`.
 
 **Save / Open** writes a single `label.pm220.json`: text, QR and Code 128 store their strings; images store a downscaled grayscale PNG (base64). Objects use `x`, `y`, `width`, `height` in dots. QR encoding uses Project Nayuki’s MIT `qrcodegen` (`web/qrcodegen.js`).
 

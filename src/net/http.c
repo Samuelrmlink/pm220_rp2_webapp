@@ -16,7 +16,7 @@
 #define HTTP_CONNS 2
 #define FILE_CHUNK 1024
 
-static char json_buf[2048];
+static char json_buf[4096];
 static uint8_t print_bitmap[TSPL_BITMAP_MAX];
 static uint8_t print_job[TSPL_JOB_MAX];
 static uint8_t file_chunk[FILE_CHUNK];
@@ -30,8 +30,12 @@ typedef struct {
     size_t body_got;
     bool taking_print_body;
     bool taking_fs_body;
+    bool taking_post_body;
     bool sending_file;
     char fs_name[FS_NAME_MAX + 1];
+    char method[8];
+    char path[96];
+    char post_body[256];
     int file_h;
     size_t file_left;
 } http_conn_t;
@@ -201,7 +205,48 @@ static bool fs_api_name(const char *path, char *out, size_t cap) {
     if (strncmp(path, "/api/fs/", 8) != 0) {
         return false;
     }
-    return copy_path_token(path + 8, out, cap) && fs_valid_name(out);
+    if (!copy_path_token(path + 8, out, cap)) {
+        return false;
+    }
+    size_t n = strlen(out);
+    if (n && out[n - 1] == '/') {
+        out[n - 1] = 0;
+    }
+    return out[0] != 0;
+}
+
+static bool json_str_field(const char *body, const char *key, char *out, size_t cap) {
+    char pat[40];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char *p = strstr(body ? body : "", pat);
+    if (!p) {
+        return false;
+    }
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p != ':') {
+        return false;
+    }
+    p++;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p != '"') {
+        return false;
+    }
+    p++;
+    size_t n = 0;
+    while (p[n] && p[n] != '"' && n + 1 < cap) {
+        n++;
+    }
+    if (p[n] != '"') {
+        return false;
+    }
+    memcpy(out, p, n);
+    out[n] = 0;
+    return true;
 }
 
 static bool static_req_name(const char *path, char *out, size_t cap) {
@@ -449,16 +494,59 @@ static int dispatch(struct tcp_pcb *tpcb, http_conn_t *c, const char *method, co
                  layout.print_width_dots, layout.print_height_dots);
         return http_reply(tpcb, 202, "application/json", json_buf);
     }
-    if ((path_is(path, "/api/fs") || path_is(path, "/api/fs/")) && strcmp(method, "GET") == 0) {
-        if (fs_list_json(json_buf, sizeof(json_buf)) < 0) {
-            return http_reply(tpcb, 500, "application/json",
-                              "{\"ok\":false,\"error\":\"fs unavailable\"}");
+    if (path_is(path, "/api/fs/rename") && strcmp(method, "POST") == 0) {
+        char from[FS_NAME_MAX + 1];
+        char to[FS_NAME_MAX + 1];
+        if (!json_str_field(body, "from", from, sizeof(from)) ||
+            !json_str_field(body, "to", to, sizeof(to)) ||
+            !fs_valid_path(from) || !fs_valid_path(to)) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"bad name\"}");
         }
-        return http_reply(tpcb, 200, "application/json", json_buf);
+        int err = fs_rename(from, to);
+        if (err == 1) {
+            return http_reply(tpcb, 409, "application/json",
+                              "{\"ok\":false,\"error\":\"exists\"}");
+        }
+        if (err < 0) {
+            if (!fs_stat(from, NULL)) {
+                return http_reply(tpcb, 404, "application/json",
+                                  "{\"ok\":false,\"error\":\"not found\"}");
+            }
+            return http_reply(tpcb, 500, "application/json",
+                              "{\"ok\":false,\"error\":\"rename failed\"}");
+        }
+        return http_reply(tpcb, 200, "application/json", "{\"ok\":true}");
+    }
+    if (strncmp(path, "/api/fs", 7) == 0 && strcmp(method, "GET") == 0) {
+        if (path_is(path, "/api/fs") || path_is(path, "/api/fs/")) {
+            if (fs_list_json("", json_buf, sizeof(json_buf)) < 0) {
+                return http_reply(tpcb, 500, "application/json",
+                                  "{\"ok\":false,\"error\":\"fs unavailable\"}");
+            }
+            return http_reply(tpcb, 200, "application/json", json_buf);
+        }
+        char name[FS_NAME_MAX + 1];
+        if (!fs_api_name(path, name, sizeof(name))) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"bad name\"}");
+        }
+        if (fs_is_dir(name)) {
+            if (fs_list_json(name, json_buf, sizeof(json_buf)) < 0) {
+                return http_reply(tpcb, 500, "application/json",
+                                  "{\"ok\":false,\"error\":\"fs unavailable\"}");
+            }
+            return http_reply(tpcb, 200, "application/json", json_buf);
+        }
+        if (!fs_valid_path(name) || !fs_stat(name, NULL)) {
+            return http_reply(tpcb, 404, "application/json",
+                              "{\"ok\":false,\"error\":\"not found\"}");
+        }
+        return http_start_file(c, tpcb, name, ends_with(name, ".gz"));
     }
     if (strcmp(method, "DELETE") == 0) {
         char name[FS_NAME_MAX + 1];
-        if (!fs_api_name(path, name, sizeof(name))) {
+        if (!fs_api_name(path, name, sizeof(name)) || !fs_valid_path(name)) {
             return http_reply(tpcb, 400, "application/json",
                               "{\"ok\":false,\"error\":\"bad name\"}");
         }
@@ -557,6 +645,8 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         bool want_bitmap = path_is(path, "/api/print") && strcmp(method, "POST") == 0 &&
                            !path_is(path, "/api/print/test");
         bool want_fs_put = strcmp(method, "PUT") == 0 && strncmp(path, "/api/fs/", 8) == 0;
+        bool want_post_body = strcmp(method, "POST") == 0 && c->content_len > 0 &&
+                              !want_bitmap;
         if (want_bitmap) {
             if (c->content_len == 0 || c->content_len > sizeof(print_bitmap)) {
                 pbuf_free(p);
@@ -567,7 +657,8 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
             c->taking_print_body = true;
             c->body_got = 0;
         } else if (want_fs_put) {
-            if (!fs_api_name(path, c->fs_name, sizeof(c->fs_name))) {
+            if (!fs_api_name(path, c->fs_name, sizeof(c->fs_name)) ||
+                !fs_valid_path(c->fs_name)) {
                 pbuf_free(p);
                 conn_drop(tpcb);
                 return http_reply(tpcb, 400, "application/json",
@@ -586,6 +677,17 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                                   "{\"ok\":false,\"error\":\"fs write busy or failed\"}");
             }
             c->taking_fs_body = true;
+            c->body_got = 0;
+        } else if (want_post_body) {
+            if (c->content_len >= sizeof(c->post_body)) {
+                pbuf_free(p);
+                conn_drop(tpcb);
+                return http_reply(tpcb, 413, "application/json",
+                                  "{\"ok\":false,\"error\":\"body too large\"}");
+            }
+            snprintf(c->method, sizeof(c->method), "%s", method);
+            snprintf(c->path, sizeof(c->path), "%s", path);
+            c->taking_post_body = true;
             c->body_got = 0;
         } else {
             const char *body = split + 4;
@@ -659,6 +761,29 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
             snprintf(json_buf, sizeof(json_buf),
                      "{\"ok\":true,\"name\":\"%s\",\"bytes\":%u}", name, (unsigned)len);
             return http_reply(tpcb, 200, "application/json", json_buf);
+        }
+        return ERR_OK;
+    }
+
+    if (c->taking_post_body) {
+        while (offset < p->tot_len && c->body_got < c->content_len) {
+            size_t room = c->content_len - c->body_got;
+            uint16_t chunk = pbuf_copy_partial(p, c->post_body + c->body_got, (uint16_t)room,
+                                               (uint16_t)offset);
+            if (!chunk) {
+                break;
+            }
+            c->body_got += chunk;
+            offset += chunk;
+        }
+        pbuf_free(p);
+        if (c->body_got >= c->content_len) {
+            c->post_body[c->content_len] = 0;
+            c->taking_post_body = false;
+            dispatch(tpcb, c, c->method, c->path, c->post_body, c->content_len);
+            if (!c->sending_file) {
+                conn_drop(tpcb);
+            }
         }
         return ERR_OK;
     }
