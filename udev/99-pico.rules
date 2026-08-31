@@ -1,0 +1,27 @@
+# Raspberry Pi Pico / RP2350 access without sudo.
+#
+# Install:
+#   sudo cp udev/99-pico.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload
+#   sudo udevadm trigger
+# Then unplug/replug the board (or re-enter BOOTSEL).
+#
+# This machine has no plugdev group (Arch/Omarchy). The official
+# picotool 60-picotool.rules assigns GROUP="plugdev", which udev
+# ignores here and can skip the rest of the rule. Use systemd
+# uaccess instead so the logged-in seat user gets an ACL.
+#
+# Vendor 2e8a = Raspberry Pi. Covers:
+#   0003 RP2040 BOOTSEL
+#   0009 running stdio USB / picotool vendor reset (this firmware)
+#   000a picoprobe / debugprobe
+#   000f RP2350 BOOTSEL (Pimoroni Pico Plus 2 W)
+
+ACTION!="remove", SUBSYSTEM=="usb", ATTRS{idVendor}=="2e8a", MODE="0660", TAG+="uaccess"
+
+# CDC-ACM console (e.g. /dev/ttyACM2)
+ACTION!="remove", SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", MODE="0660", TAG+="uaccess"
+
+# Stop ModemManager grabbing the serial interface
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="2e8a", ENV{ID_MM_DEVICE_IGNORE}="1"
+ENV{ID_VENDOR_ID}=="2e8a", ENV{ID_MM_DEVICE_IGNORE}="1"
