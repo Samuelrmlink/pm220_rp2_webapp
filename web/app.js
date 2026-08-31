@@ -10,7 +10,7 @@ import "./barcode.js";
 import "./qr.js";
 import "./image.js";
 
-const SCALE = 2;
+const SCALE_MAX = 2;
 const STORE = "pm220-editor-v1";
 const FALLBACK_PAGE = {
     width_dots: 384,
@@ -43,7 +43,7 @@ packed.fill(0xff);
 const editor = new Editor($("stage"), {
     page,
     safe: page.safe_rect,
-    scale: SCALE,
+    scale: SCALE_MAX,
     onChange: () => {
         paint();
         fillForm();
@@ -52,8 +52,30 @@ const editor = new Editor($("stage"), {
     onSelect: (box) => focusPayload(box),
 });
 
+function viewScale() {
+    const wrap = $("stage-wrap");
+    if (!wrap || wrap.clientWidth < 32) {
+        return SCALE_MAX;
+    }
+    const cs = getComputedStyle(wrap);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const availW = Math.max(64, wrap.clientWidth - padX);
+    const stacked = window.matchMedia("(max-width: 900px)").matches;
+    let availH;
+    if (stacked) {
+        const headerH = document.querySelector("header").offsetHeight;
+        availH = Math.max(80, window.innerHeight - headerH - padY - 72);
+    } else {
+        availH = Math.max(80, wrap.clientHeight - padY);
+    }
+    const s = Math.min(availW / page.width_dots, availH / page.height_dots);
+    return Math.min(SCALE_MAX, Math.max(0.5, s));
+}
+
 function layoutGuides() {
-    const s = SCALE;
+    const s = viewScale();
+    editor.scale = s;
     const stage = $("stage");
     stage.style.width = `${page.width_dots * s}px`;
     stage.style.height = `${page.height_dots * s}px`;
@@ -74,6 +96,7 @@ function layoutGuides() {
     } else {
         crop.hidden = true;
     }
+    editor.syncDom();
 }
 
 function paint() {
@@ -440,6 +463,9 @@ async function boot() {
     }
     await refreshStatus();
     setInterval(refreshStatus, 4000);
+    layoutGuides();
+    new ResizeObserver(() => layoutGuides()).observe($("stage-wrap"));
+    window.addEventListener("resize", () => layoutGuides());
 }
 
 boot();
