@@ -78,13 +78,9 @@
                 <form id="form-qr" hidden>
                     <label for="qr-payload">Contents</label>
                     <textarea id="qr-payload"></textarea>
-                    <label for="qr-ecc">Error correction</label>
-                    <select id="qr-ecc">
-                        <option value="L">L (7%)</option>
-                        <option value="M" selected>M (15%)</option>
-                        <option value="Q">Q (25%)</option>
-                        <option value="H">H (30%)</option>
-                    </select>
+                    <div class="checks">
+                        <label><input type="checkbox" id="qr-pixel"> Pixel-perfect scale</label>
+                    </div>
                 </form>
                 <form id="form-barcode" hidden>
                     <label for="bc-payload">Contents</label>
@@ -95,6 +91,16 @@
                     </select>
                     <div class="checks">
                         <label><input type="checkbox" id="bc-text"> Show text</label>
+                    </div>
+                    <div class="row">
+                        <div>
+                            <label for="bc-font">Text size</label>
+                            <input id="bc-font" type="number" min="4" max="72" step="1">
+                        </div>
+                        <div>
+                            <label for="bc-off">Offset from bottom</label>
+                            <input id="bc-off" type="number" step="1">
+                        </div>
                     </div>
                 </form>
                 <form id="form-image" hidden>
@@ -117,6 +123,15 @@
                         <label><input type="checkbox" id="advanced"> Advanced</label>
                     </div>
                     <div id="coords" hidden>
+                        <div id="advanced-qr" hidden>
+                            <label for="qr-ecc">Error correction</label>
+                            <select id="qr-ecc">
+                                <option value="L">L (7%)</option>
+                                <option value="M">M (15%)</option>
+                                <option value="Q">Q (25%)</option>
+                                <option value="H">H (30%)</option>
+                            </select>
+                        </div>
                         <div class="coords">
                             <label for="ox">x</label>
                             <label for="oy">y</label>

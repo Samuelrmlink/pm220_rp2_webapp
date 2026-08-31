@@ -1,6 +1,6 @@
 /** Code 128 (set B) — payload in, bars out. No bitmap stored. */
 
-import { blitCrisp, registerDrawer } from "./raster.js";
+import { blitCrisp, FONT_STACK, geom, layoutSize, registerDrawer } from "./raster.js";
 
 /* 6 run widths (bar, space, …) summing to 11. Index = code value. */
 const PAT = [
@@ -70,27 +70,24 @@ export function drawBarcode(ctx, obj) {
     if (!enc) {
         return;
     }
-    const show = obj.showText !== false;
     const qz = 10;
     const total = enc.modules + 2 * qz;
-    const barH = 24;
-    const textH = show ? 8 : 0;
     const src = document.createElement("canvas");
     src.width = total;
-    src.height = barH + textH;
-    const c = src.getContext("2d");
-    c.fillStyle = "#fff";
-    c.fillRect(0, 0, src.width, src.height);
-    const img = c.getImageData(0, 0, src.width, src.height);
+    src.height = 24;
+    const img = src.getContext("2d").createImageData(src.width, src.height);
     const d = img.data;
-    const blackCol = (x0, x1, y0, y1) => {
+    d.fill(255);
+    for (let i = 3; i < d.length; i += 4) {
+        d[i] = 255;
+    }
+    const blackCol = (x0, x1) => {
         const xa = Math.max(0, x0);
         const xb = Math.min(src.width, x1);
-        for (let y = y0; y < y1; y++) {
+        for (let y = 0; y < src.height; y++) {
             for (let x = xa; x < xb; x++) {
                 const i = (y * src.width + x) * 4;
                 d[i] = d[i + 1] = d[i + 2] = 0;
-                d[i + 3] = 255;
             }
         }
     };
@@ -98,21 +95,40 @@ export function drawBarcode(ctx, obj) {
     let bar = true;
     for (const n of enc.runs) {
         if (bar) {
-            blackCol(x, x + n, 0, barH);
+            blackCol(x, x + n);
         }
         x += n;
         bar = !bar;
     }
-    c.putImageData(img, 0, 0);
-    if (show) {
-        c.fillStyle = "#000";
-        c.font = "7px Arial, Helvetica, sans-serif";
-        c.textAlign = "center";
-        c.textBaseline = "top";
-        c.imageSmoothingEnabled = false;
-        c.fillText(enc.text, src.width / 2, barH, src.width - 2);
-    }
+    src.getContext("2d").putImageData(img, 0, 0);
     blitCrisp(ctx, obj, src);
+    if (obj.showText === false) {
+        return;
+    }
+    const g = geom(obj);
+    const ls = layoutSize(obj);
+    const size = Math.max(4, Number(obj.textSize) || 12);
+    const off = obj.textOffset == null ? 7 : Number(obj.textOffset);
+    ctx.save();
+    ctx.translate(g.x + g.width / 2, g.y + g.height / 2);
+    ctx.rotate((Number(obj.rotate) || 0) * Math.PI / 180);
+    ctx.translate(-ls.w / 2, -ls.h / 2);
+    ctx.font = `${size}px ${FONT_STACK}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    const m = ctx.measureText(enc.text);
+    const ascent = Number.isFinite(m.actualBoundingBoxAscent) ? m.actualBoundingBoxAscent : size * 0.8;
+    const descent = Number.isFinite(m.actualBoundingBoxDescent) ? m.actualBoundingBoxDescent : size * 0.2;
+    const tw = m.width;
+    const inkBottom = ls.h + off;
+    const baseline = inkBottom - descent;
+    const inkTop = baseline - ascent;
+    const pad = Math.max(2, Math.round(size * 0.15));
+    ctx.fillStyle = "#fff";
+    ctx.fillRect((ls.w - tw) / 2 - pad, inkTop - pad, tw + 2 * pad, ascent + descent + 2 * pad);
+    ctx.fillStyle = "#000";
+    ctx.fillText(enc.text, ls.w / 2, baseline);
+    ctx.restore();
 }
 
 registerDrawer("barcode1d", drawBarcode);

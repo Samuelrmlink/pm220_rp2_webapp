@@ -45,6 +45,7 @@ export function defaultQr(page, safe) {
         type: "qr",
         payload: "https://",
         ecc: "M",
+        pixelPerfect: false,
         pristine: true,
         ...place(page, safe, 80, 80),
     };
@@ -57,6 +58,8 @@ export function defaultBarcode(page, safe) {
         symbology: "code128",
         payload: "HELLO",
         showText: true,
+        textSize: 12,
+        textOffset: 7,
         pristine: true,
         ...place(page, safe, 200, 48),
     };
@@ -299,7 +302,29 @@ export class Editor {
             box.y = y1;
             box.width = x2 - x1 + 1;
             box.height = y2 - y1 + 1;
+            if (box.type === "qr") {
+                const size = Math.max(MIN, Math.max(box.width, box.height));
+                if (d.mode.indexOf("w") >= 0) {
+                    box.x = x2 - size + 1;
+                }
+                if (d.mode.indexOf("n") >= 0) {
+                    box.y = y2 - size + 1;
+                }
+                box.width = size;
+                box.height = size;
+            }
             clampBox(box, this.page);
+            if (box.type === "qr") {
+                const size = Math.min(box.width, box.height);
+                if (d.mode.indexOf("w") >= 0) {
+                    box.x = box.x + box.width - size;
+                }
+                if (d.mode.indexOf("n") >= 0) {
+                    box.y = box.y + box.height - size;
+                }
+                box.width = size;
+                box.height = size;
+            }
         }
         this.syncDom();
         this.onChange();

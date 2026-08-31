@@ -91,7 +91,8 @@ export function blitCrisp(ctx, obj, src) {
     const rot = ((Number(obj.rotate) || 0) % 360 + 360) % 360;
     const turns = Math.round(rot / 90) % 4;
     const bmp = turns ? rotateCrisp(src, turns) : src;
-    const scale = Math.min(g.width / bmp.width, g.height / bmp.height);
+    const fit = Math.min(g.width / bmp.width, g.height / bmp.height);
+    const scale = obj.pixelPerfect ? Math.max(1, Math.floor(fit)) : fit;
     const dw = Math.max(1, Math.round(bmp.width * scale));
     const dh = Math.max(1, Math.round(bmp.height * scale));
     const dx = g.x + Math.floor((g.width - dw) / 2);

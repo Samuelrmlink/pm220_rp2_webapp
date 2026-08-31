@@ -158,6 +158,7 @@ function fillForm() {
     $("form-qr").hidden = !box || box.type !== "qr";
     $("form-barcode").hidden = !box || box.type !== "barcode1d";
     $("form-image").hidden = !box || box.type !== "image";
+    $("advanced-qr").hidden = !$("advanced").checked || !box || box.type !== "qr";
     if (!box) {
         return;
     }
@@ -185,6 +186,7 @@ function fillForm() {
         if (document.activeElement !== $("qr-payload")) {
             $("qr-payload").value = box.payload || "";
         }
+        $("qr-pixel").checked = !!box.pixelPerfect;
         $("qr-ecc").value = box.ecc || "M";
     } else if (box.type === "barcode1d") {
         if (document.activeElement !== $("bc-payload")) {
@@ -192,6 +194,8 @@ function fillForm() {
         }
         $("bc-sym").value = box.symbology || "code128";
         $("bc-text").checked = box.showText !== false;
+        $("bc-font").value = box.textSize ?? 12;
+        $("bc-off").value = box.textOffset ?? 7;
     } else if (box.type === "image") {
         $("img-dither").checked = box.dither !== false;
     }
@@ -226,12 +230,18 @@ function readForm() {
         Object.assign(patch, {
             payload: $("qr-payload").value,
             ecc: $("qr-ecc").value,
+            pixelPerfect: $("qr-pixel").checked,
         });
+        if (patch.width !== patch.height) {
+            patch.height = patch.width;
+        }
     } else if (box.type === "barcode1d") {
         Object.assign(patch, {
             payload: $("bc-payload").value,
             symbology: $("bc-sym").value,
             showText: $("bc-text").checked,
+            textSize: Number($("bc-font").value),
+            textOffset: Number($("bc-off").value),
         });
     } else if (box.type === "image") {
         patch.dither = $("img-dither").checked;
@@ -259,7 +269,10 @@ function restore() {
 }
 
 function syncAdvanced() {
-    $("coords").hidden = !$("advanced").checked;
+    const on = $("advanced").checked;
+    const box = editor.selected();
+    $("coords").hidden = !on;
+    $("advanced-qr").hidden = !on || !box || box.type !== "qr";
 }
 
 $("editor-pane").addEventListener("input", (e) => {
