@@ -88,7 +88,7 @@ python3 tools/dev_server.py
 
 Use `?api=http://192.168.4.1` on the phone AP, or `http://pm220.local` when mDNS works. Stdlib only; no npm.
 
-**Save / Open** writes a single `label.pm220.json`: text, QR and Code 128 store their strings; images store a downscaled grayscale PNG (base64). Objects use `x`, `y`, `width`, `height` in dots.
+**Save / Open** writes a single `label.pm220.json`: text, QR and Code 128 store their strings; images store a downscaled grayscale PNG (base64). Objects use `x`, `y`, `width`, `height` in dots. QR encoding uses Project Nayuki’s MIT `qrcodegen` (`web/qrcodegen.js`).
 
 ## Framebuffer print (`POST /api/print`)
 
