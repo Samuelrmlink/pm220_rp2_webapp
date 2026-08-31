@@ -77,6 +77,17 @@ POST /api/print                    raw packed 1-bit framebuffer (see below)
 
 On the Plus 2 W, the USER button also fires the test frame while SPP is up.
 
+## Label editor (PC)
+
+Vanilla HTML/CSS/JS in `web/`. Rasterizes text boxes in the browser and `POST`s the packed framebuffer. The Pico does not serve these files yet.
+
+```bash
+python3 tools/dev_server.py
+# open http://127.0.0.1:8000/?api=http://192.168.7.1
+```
+
+Use `?api=http://192.168.4.1` on the phone AP, or `http://pm220.local` when mDNS works. Stdlib only; no npm.
+
 ## Framebuffer print (`POST /api/print`)
 
 The Pico does **not** rasterize text or images. You send a pre-formatted 1-bit buffer; it wraps TSPL and applies the same die-cut registration as `nelko-pm220`.

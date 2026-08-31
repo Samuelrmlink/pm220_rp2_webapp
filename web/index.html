@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PM220 editor</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <header>
+        <h1>PM220</h1>
+        <button type="button" id="add">+ Text</button>
+        <button type="button" id="del">Delete</button>
+        <button type="button" id="print" class="primary">Print</button>
+        <span id="status">connecting…</span>
+    </header>
+    <main>
+        <div class="stage-wrap">
+            <div class="stage" id="stage">
+                <canvas id="preview" width="384" height="240"></canvas>
+                <div class="crop-band" id="crop"></div>
+                <div class="safe-rect" id="safe"></div>
+            </div>
+        </div>
+        <aside id="props">
+            <h2>Text box</h2>
+            <p class="empty" id="none">Select or add a text box.</p>
+            <form id="form" hidden>
+                <label for="text">Text</label>
+                <textarea id="text"></textarea>
+                <label for="font">Font</label>
+                <select id="font">
+                    <option value="Arial">Arial</option>
+                </select>
+                <div class="row">
+                    <div>
+                        <label for="size">Size (dots)</label>
+                        <input id="size" type="number" min="4" max="240" step="1">
+                    </div>
+                    <div>
+                        <label for="rotate">Rotation</label>
+                        <select id="rotate">
+                            <option value="0">0°</option>
+                            <option value="90">90°</option>
+                            <option value="180">180°</option>
+                            <option value="270">270°</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="checks">
+                    <label><input type="checkbox" id="autoSize"> Auto size</label>
+                    <label><input type="checkbox" id="wrap"> Word wrap</label>
+                    <label><input type="checkbox" id="bold"> Bold</label>
+                    <label><input type="checkbox" id="italic"> Italic</label>
+                    <label><input type="checkbox" id="underline"> Underline</label>
+                </div>
+                <div class="row">
+                    <div>
+                        <label for="align">Horizontal</label>
+                        <select id="align">
+                            <option value="left">Left</option>
+                            <option value="center">Center</option>
+                            <option value="right">Right</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="valign">Vertical</label>
+                        <select id="valign">
+                            <option value="top">Top</option>
+                            <option value="middle">Middle</option>
+                            <option value="bottom">Bottom</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div>
+                        <label for="x1">x1</label>
+                        <input id="x1" type="number" step="1">
+                    </div>
+                    <div>
+                        <label for="y1">y1</label>
+                        <input id="y1" type="number" step="1">
+                    </div>
+                </div>
+                <div class="row">
+                    <div>
+                        <label for="x2">x2</label>
+                        <input id="x2" type="number" step="1">
+                    </div>
+                    <div>
+                        <label for="y2">y2</label>
+                        <input id="y2" type="number" step="1">
+                    </div>
+                </div>
+            </form>
+        </aside>
+    </main>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
