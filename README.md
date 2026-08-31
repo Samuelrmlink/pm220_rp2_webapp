@@ -73,20 +73,38 @@ GET  /api/print/test               print the inset frame (also POST)
 POST /api/printer/connect          optional {"address":"AA:BB:CC:DD:EE:FF"}
 POST /api/printer/disconnect
 POST /api/print                    raw packed 1-bit framebuffer (see below)
+GET  /api/fs                       list LittleFS files
+PUT  /api/fs/<name>                create or replace (max 64 KiB)
+DELETE /api/fs/<name>
+GET  /                             index.html from LittleFS when present
 ```
 
 On the Plus 2 W, the USER button also fires the test frame while SPP is up.
 
-## Label editor (PC)
+## Label editor
 
-Vanilla HTML/CSS/JS in `web/`. Rasterizes objects in the browser and `POST`s the packed framebuffer. The Pico does not serve these files yet.
+Vanilla HTML/CSS/JS in `web/`. Rasterizes objects in the browser and `POST`s the packed framebuffer. Stdlib only; no npm. Text assets are **pre-gzipped** (not minified) so they fit LittleFS without a JS toolchain.
+
+PC-side while iterating:
 
 ```bash
 python3 tools/dev_server.py
 # open http://127.0.0.1:8000/?api=http://192.168.7.1
 ```
 
-Use `?api=http://192.168.4.1` on the phone AP, or `http://pm220.local` when mDNS works. Stdlib only; no npm.
+Use `?api=http://192.168.4.1` on the phone AP, or `http://pm220.local` when mDNS works.
+
+Load the same files onto the Pico (1 MiB LittleFS at flash offset 3 MiB; last 16 KiB of a 4 MB part is left for BTstack NVM):
+
+```bash
+python3 tools/pack_web.py                         # -> build/web_dist/*.gz
+python3 tools/pack_web.py --upload                # USB NCM http://192.168.7.1
+python3 tools/pack_web.py --upload --base http://192.168.4.1
+python3 tools/pack_web.py --upload --sync         # also DELETE stale names
+python3 tools/pack_web.py --list
+```
+
+`PUT` replaces an existing name. After upload, `http://192.168.7.1/` (or the AP / `.local` URL) serves `index.html.gz` with `Content-Encoding: gzip`. Same-origin `fetch` is used when the editor is served from the Pico; `?api=` still overrides on the PC dev server.
 
 **Save / Open** writes a single `label.pm220.json`: text, QR and Code 128 store their strings; images store a downscaled grayscale PNG (base64). Objects use `x`, `y`, `width`, `height` in dots. QR encoding uses Project Nayuki’s MIT `qrcodegen` (`web/qrcodegen.js`).
 

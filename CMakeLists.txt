@@ -39,16 +39,23 @@ add_executable(pm220
     src/printer/job.c
     src/usb/usb_descriptors.c
     src/net/usb_ncm.c
+    src/fs/fs.c
+    src/fs/littlefs/lfs.c
+    src/fs/littlefs/lfs_util.c
 )
 
 target_include_directories(pm220 PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/include
     ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/src/fs
+    ${CMAKE_CURRENT_LIST_DIR}/src/fs/littlefs
 )
 
 target_link_libraries(pm220 PRIVATE
     pico_stdlib
     pico_unique_id
+    pico_flash
+    hardware_flash
     pico_cyw43_arch_lwip_threadsafe_background
     pico_lwip_mdns
     pico_btstack_classic
@@ -61,6 +68,8 @@ target_compile_definitions(pm220 PRIVATE
     PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
     PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
     PICO_USB_RESET_MS_OS_20_DESCRIPTOR_ITF=4
+    LFS_NO_DEBUG=1
+    LFS_NAME_MAX=64
 )
 
 pico_enable_stdio_usb(pm220 1)

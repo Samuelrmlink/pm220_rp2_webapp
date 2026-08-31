@@ -1,9 +1,13 @@
-/** Pico HTTP API helpers. Base URL from ?api=, else http://pm220.local */
+/** Pico HTTP API helpers. ?api= overrides; same-origin when served from the Pico. */
 
 export function apiBase() {
     const q = new URLSearchParams(location.search).get("api");
     if (q) {
         return q.replace(/\/+$/, "");
+    }
+    const host = location.hostname;
+    if (host && host !== "localhost" && host !== "127.0.0.1") {
+        return "";
     }
     return "http://pm220.local";
 }

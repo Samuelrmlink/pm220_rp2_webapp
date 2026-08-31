@@ -10,6 +10,7 @@
 #include "net/mdns.h"
 #include "net/usb_ncm.h"
 #include "bt/bt_core.h"
+#include "fs/fs.h"
 
 #define AP_SSID "PM220-Pico"
 #define AP_PASS "pm220pico"
@@ -47,6 +48,9 @@ int main(void) {
     stdio_init_all();
     sleep_ms(1500);
     printf("pm220-pico2w starting\n");
+    if (!fs_init()) {
+        printf("fs: unavailable (HTTP still serves the API)\n");
+    }
 
     if (cyw43_arch_init()) {
         printf("cyw43_arch_init failed\n");

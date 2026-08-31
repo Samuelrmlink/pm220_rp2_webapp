@@ -1,4 +1,5 @@
 build/
+__pycache__/
 *.uf2
 *.elf
 *.dis
