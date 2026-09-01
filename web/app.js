@@ -239,6 +239,7 @@ function fillForm() {
     const box = editor.selected();
     $("add-pane").hidden = !!box;
     $("editor-pane").hidden = !box;
+    $("pane-close").hidden = !box;
     $("del").disabled = !box;
     $("pane-title").textContent = box ? (TITLES[box.type] || box.type) : "Add object";
     const clip = !!(box && box.type === "text" && !box.wrap && !box.autoSize);
@@ -434,6 +435,7 @@ $("image-file").addEventListener("change", async (e) => {
 });
 
 $("del").addEventListener("click", () => editor.removeSelected());
+$("pane-close").addEventListener("click", () => editor.select(null));
 
 let picoName = "";
 const picker = bindPicker({

@@ -180,12 +180,27 @@ aside {
     -webkit-overflow-scrolling: touch;
 }
 
+.pane-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+}
+
 aside h2 {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--muted);
-    margin: 0 0 8px;
+    margin: 0;
+    flex: 1;
+}
+
+#pane-close {
+    flex: none;
+    padding: 2px 8px;
+    line-height: 1.2;
+    font-size: 13px;
 }
 
 aside label {
