@@ -71,7 +71,8 @@ PUT  /api/wifi                      {"scan":"idle"|"always"|"never","mdns","ap_s
 GET  /api/wifi/scan
 POST /api/wifi/scan                 start a Wi-Fi scan (briefly disturbs AP clients)
 GET  /api/wifi/networks             known SSIDs (no passwords)
-POST /api/wifi/connect              {"ssid","password"?} save + join STA
+PUT  /api/wifi/networks             {"ssid","password"?,"new_ssid"?} save/rename, no join
+POST /api/wifi/connect              {"ssid","password"?} save+join; omit password to join a known SSID
 DELETE /api/wifi/networks           {"ssid"}
 POST /api/wifi/ap                   leave STA, start SoftAP
 GET  /api/printer
@@ -104,6 +105,8 @@ python3 tools/wifi.py scan-mode idle    # idle | always | never
 python3 tools/wifi.py ap                # force SoftAP
 python3 tools/wifi.py --base http://192.168.4.1 status
 ```
+
+The editor **WiFi Settings** button (top right, next to printer status) covers the same surface: mDNS, SoftAP SSID/PSK/scan policy, station scan + known networks.
 
 ## Label editor
 

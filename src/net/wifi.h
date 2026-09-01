@@ -13,6 +13,8 @@ void wifi_networks_json(char *buf, size_t cap);
 
 int wifi_request_scan(void);
 int wifi_connect_save(const char *ssid, const char *password);
+int wifi_connect_known(const char *ssid);
+int wifi_save_network(const char *ssid, const char *password, const char *new_ssid);
 int wifi_delete_network(const char *ssid);
 int wifi_set_scan_policy(const char *policy);
 int wifi_set_mdns(const char *name);

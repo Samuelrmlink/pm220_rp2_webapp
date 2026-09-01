@@ -15,7 +15,10 @@
         <button type="button" id="print" class="primary">Print</button>
         <input id="file" type="file" accept=".json,.pm220.json,application/json" hidden>
         <input id="image-file" type="file" accept="image/png,image/jpeg,image/*" hidden>
-        <span id="status">connecting…</span>
+        <div class="header-right">
+            <button type="button" id="wifi-settings">WiFi Settings</button>
+            <span id="status">connecting…</span>
+        </div>
     </header>
     <div id="picker" hidden>
         <div class="picker-backdrop"></div>
@@ -32,6 +35,77 @@
                 <button type="button" id="picker-pc">This computer…</button>
                 <button type="button" id="picker-save" class="primary">Save</button>
                 <button type="button" id="picker-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+    <div id="wifi" hidden>
+        <div class="picker-backdrop"></div>
+        <div class="picker-panel wifi-panel" role="dialog" aria-labelledby="wifi-title">
+            <h2 id="wifi-title">WiFi Settings</h2>
+            <p id="wifi-live" class="wifi-live"></p>
+            <p id="wifi-err" class="picker-err" hidden></p>
+            <div class="wifi-tabs" role="tablist">
+                <button type="button" class="wifi-tab" id="wifi-tab-mdns" data-tab="mdns" aria-selected="true">mDNS</button>
+                <button type="button" class="wifi-tab" id="wifi-tab-ap" data-tab="ap" aria-selected="false">SoftAP</button>
+                <button type="button" class="wifi-tab" id="wifi-tab-sta" data-tab="sta" aria-selected="false">Station</button>
+            </div>
+            <div id="wifi-pane-mdns" class="wifi-pane">
+                <label for="wifi-mdns">Hostname</label>
+                <input id="wifi-mdns" type="text" spellcheck="false" autocomplete="off" maxlength="63">
+                <p class="wifi-hint" id="wifi-mdns-hint">http://pm220.local/</p>
+            </div>
+            <div id="wifi-pane-ap" class="wifi-pane" hidden>
+                <p class="wifi-hint">Changing SSID or password restarts SoftAP and disconnects clients.</p>
+                <label for="wifi-ap-ssid">SSID</label>
+                <input id="wifi-ap-ssid" type="text" spellcheck="false" autocomplete="off" maxlength="32">
+                <label for="wifi-ap-psk">Password</label>
+                <input id="wifi-ap-psk" type="password" placeholder="unchanged" maxlength="63" autocomplete="new-password">
+                <label for="wifi-scan-policy">Scan for known networks in SoftAP mode</label>
+                <select id="wifi-scan-policy">
+                    <option value="always">Always</option>
+                    <option value="idle">No clients connected</option>
+                    <option value="never">Never</option>
+                </select>
+                <button type="button" id="wifi-start-ap">Start SoftAP</button>
+            </div>
+            <div id="wifi-pane-sta" class="wifi-pane" hidden>
+                <p id="wifi-scan-warn" class="wifi-hint" hidden>A scan hops the radio and can hitch or drop SoftAP clients.</p>
+                <button type="button" id="wifi-scan-btn">Scan</button>
+                <div id="wifi-scan-box" hidden>
+                    <h3>Nearby</h3>
+                    <ul id="wifi-scan-list" class="wifi-list"></ul>
+                    <p id="wifi-scan-empty" class="picker-empty" hidden>No networks found.</p>
+                </div>
+                <h3>Known networks</h3>
+                <ul id="wifi-known-list" class="wifi-list"></ul>
+                <p id="wifi-known-empty" class="picker-empty" hidden>No saved networks.</p>
+                <div id="wifi-known-actions" class="wifi-known-actions" hidden>
+                    <button type="button" id="wifi-known-connect">Connect</button>
+                    <button type="button" id="wifi-known-modify">Modify</button>
+                    <button type="button" id="wifi-known-delete">Delete</button>
+                </div>
+            </div>
+            <div class="picker-actions">
+                <button type="button" id="wifi-save" class="primary" hidden>Save</button>
+                <button type="button" id="wifi-close">Close</button>
+            </div>
+        </div>
+    </div>
+    <div id="wifi-sub" hidden>
+        <div class="picker-backdrop"></div>
+        <div class="picker-panel wifi-sub-panel" role="dialog" aria-labelledby="wifi-sub-title">
+            <h2 id="wifi-sub-title"></h2>
+            <p id="wifi-sub-text"></p>
+            <div id="wifi-sub-form" hidden>
+                <label for="wifi-sub-ssid">SSID</label>
+                <input id="wifi-sub-ssid" type="text" spellcheck="false" autocomplete="off" maxlength="32">
+                <label for="wifi-sub-psk" id="wifi-sub-psk-label">Password</label>
+                <input id="wifi-sub-psk" type="password" maxlength="63" autocomplete="new-password">
+            </div>
+            <p id="wifi-sub-err" class="picker-err" hidden></p>
+            <div class="picker-actions">
+                <button type="button" id="wifi-sub-ok" class="primary">OK</button>
+                <button type="button" id="wifi-sub-cancel">Cancel</button>
             </div>
         </div>
     </div>

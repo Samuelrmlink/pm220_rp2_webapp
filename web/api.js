@@ -104,6 +104,69 @@ export async function gzipUtf8(text) {
     return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+export function getWifi() {
+    return getJson("/api/wifi");
+}
+
+export function putWifi(body) {
+    return fsJson("/api/wifi", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+}
+
+export function startWifiScan() {
+    return fsJson("/api/wifi/scan", { method: "POST" });
+}
+
+export function getWifiScan() {
+    return getJson("/api/wifi/scan");
+}
+
+export function getWifiNetworks() {
+    return getJson("/api/wifi/networks");
+}
+
+export function putWifiNetwork(ssid, opts) {
+    const body = { ssid };
+    if (opts && opts.password !== undefined) {
+        body.password = opts.password;
+    }
+    if (opts && opts.newSsid) {
+        body.new_ssid = opts.newSsid;
+    }
+    return fsJson("/api/wifi/networks", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+}
+
+export function connectWifi(ssid, password) {
+    const body = { ssid };
+    if (password !== undefined) {
+        body.password = password;
+    }
+    return fsJson("/api/wifi/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+}
+
+export function deleteWifiNetwork(ssid) {
+    return fsJson("/api/wifi/networks", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ssid }),
+    });
+}
+
+export function wifiForceAp() {
+    return fsJson("/api/wifi/ap", { method: "POST" });
+}
+
 export async function downloadFsBlob(name, filename) {
     const r = await fetch(apiBase() + "/api/fs/" + name);
     if (!r.ok) {

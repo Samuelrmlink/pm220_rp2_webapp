@@ -754,6 +754,47 @@ int wifi_connect_save(const char *ssid, const char *password) {
     return 0;
 }
 
+int wifi_connect_known(const char *ssid) {
+    int i = known_index(ssid);
+    if (i < 0) {
+        return -1;
+    }
+    snprintf(pending_ssid, sizeof(pending_ssid), "%s", known[i].ssid);
+    snprintf(pending_pass, sizeof(pending_pass), "%s", known[i].password);
+    pending_join = true;
+    connecting = true;
+    return 0;
+}
+
+int wifi_save_network(const char *ssid, const char *password, const char *new_ssid) {
+    if (!ssid || !ssid[0] || strlen(ssid) > WIFI_SSID_MAX) {
+        return -1;
+    }
+    if (password && strlen(password) > WIFI_PSK_MAX) {
+        return -1;
+    }
+    if (new_ssid && new_ssid[0] && strlen(new_ssid) > WIFI_SSID_MAX) {
+        return -1;
+    }
+    int i = known_index(ssid);
+    if (i < 0) {
+        return save_known(new_ssid && new_ssid[0] ? new_ssid : ssid,
+                          password ? password : "");
+    }
+    if (new_ssid && new_ssid[0] && strcmp(new_ssid, ssid) != 0) {
+        int j = known_index(new_ssid);
+        if (j >= 0 && j != i) {
+            return -2;
+        }
+        snprintf(known[i].ssid, sizeof(known[i].ssid), "%s", new_ssid);
+    }
+    if (password) {
+        snprintf(known[i].password, sizeof(known[i].password), "%s", password);
+    }
+    dirty_known = true;
+    return 0;
+}
+
 int wifi_delete_network(const char *ssid) {
     int i = known_index(ssid);
     if (i < 0) {

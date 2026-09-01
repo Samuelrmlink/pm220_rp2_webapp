@@ -3,6 +3,7 @@ import { Editor, defaultBarcode, defaultImage, defaultQr, defaultText } from "./
 import { boxOverflows, rasterize } from "./raster.js";
 import { fromDocument, toDocument } from "./doc.js";
 import { bindPicker } from "./files.js";
+import { bindWifiSettings } from "./wifi.js";
 import { code128Error } from "./barcode.js";
 import { qrError } from "./qr.js";
 import { importImageFile } from "./image.js";
@@ -354,6 +355,7 @@ const picker = bindPicker({
     setPicoName: (name) => { picoName = name; },
     setStatus,
 });
+const wifiUi = bindWifiSettings({ setStatus });
 
 $("file").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -372,7 +374,7 @@ $("file").addEventListener("change", async (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-    if (picker.isOpen()) {
+    if (picker.isOpen() || wifiUi.isOpen()) {
         return;
     }
     const inField = e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT");

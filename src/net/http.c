@@ -468,8 +468,16 @@ static int dispatch(struct tcp_pcb *tpcb, http_conn_t *c, const char *method, co
             return http_reply(tpcb, 400, "application/json",
                               "{\"ok\":false,\"error\":\"ssid required\"}");
         }
-        json_str_field(body, "password", pass, sizeof(pass));
-        int err = wifi_connect_save(ssid, pass);
+        int err;
+        if (json_str_field(body, "password", pass, sizeof(pass))) {
+            err = wifi_connect_save(ssid, pass);
+        } else {
+            err = wifi_connect_known(ssid);
+            if (err) {
+                return http_reply(tpcb, 404, "application/json",
+                                  "{\"ok\":false,\"error\":\"not found\"}");
+            }
+        }
         if (err == -2) {
             return http_reply(tpcb, 400, "application/json",
                               "{\"ok\":false,\"error\":\"too many networks\"}");
@@ -480,6 +488,29 @@ static int dispatch(struct tcp_pcb *tpcb, http_conn_t *c, const char *method, co
         }
         return http_reply(tpcb, 202, "application/json",
                           "{\"ok\":true,\"saved\":true,\"connecting\":true}");
+    }
+    if (path_is(path, "/api/wifi/networks") && strcmp(method, "PUT") == 0) {
+        char ssid[33];
+        char pass[64];
+        char new_ssid[33];
+        if (!json_str_field(body, "ssid", ssid, sizeof(ssid))) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"ssid required\"}");
+        }
+        const char *pw = json_str_field(body, "password", pass, sizeof(pass)) ? pass : NULL;
+        const char *ren = json_str_field(body, "new_ssid", new_ssid, sizeof(new_ssid))
+                              ? new_ssid
+                              : NULL;
+        int err = wifi_save_network(ssid, pw, ren);
+        if (err == -2) {
+            return http_reply(tpcb, 409, "application/json",
+                              "{\"ok\":false,\"error\":\"ssid exists\"}");
+        }
+        if (err) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"bad ssid\"}");
+        }
+        return http_reply(tpcb, 200, "application/json", "{\"ok\":true,\"saved\":true}");
     }
     if (path_is(path, "/api/wifi/networks") && strcmp(method, "DELETE") == 0) {
         char ssid[33];
