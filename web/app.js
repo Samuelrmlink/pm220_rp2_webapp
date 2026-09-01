@@ -375,10 +375,19 @@ function fillForm() {
     const box = editor.selected();
     $("add-pane").hidden = !!box;
     $("editor-pane").hidden = !box;
-    $("pane-head").hidden = !box;
-    $("pane-close").hidden = !box;
     $("del").disabled = !box;
-    $("pane-title").textContent = box ? (TITLES[box.type] || box.type) : "Add object";
+    const paneHead = $("pane-head");
+    const paneClose = $("pane-close");
+    const paneTitle = $("pane-title");
+    if (paneHead) {
+        paneHead.hidden = !box;
+    }
+    if (paneClose) {
+        paneClose.hidden = !box;
+    }
+    if (paneTitle) {
+        paneTitle.textContent = box ? (TITLES[box.type] || box.type) : "Add object";
+    }
     const clip = !!(box && box.type === "text" && !box.wrap && !box.autoSize);
     const overflow = !!(box && boxOverflows(box, editor.safe));
     const payload = payloadWarning(box);
@@ -572,7 +581,8 @@ $("image-file").addEventListener("change", async (e) => {
 });
 
 $("del").addEventListener("click", () => editor.removeSelected());
-$("pane-close").addEventListener("click", () => editor.select(null));
+$("pane-close")?.addEventListener("click", () => editor.select(null));
+
 $("obj-next").addEventListener("click", () => editor.cyclePreview(1));
 $("obj-prev").addEventListener("click", () => editor.cyclePreview(-1));
 $("obj-select").addEventListener("click", () => editor.confirmPreview());
@@ -927,4 +937,6 @@ async function boot() {
     window.addEventListener("resize", () => layoutGuides());
 }
 
-boot();
+boot().catch((err) => {
+    setStatus(String(err.message || err), "err");
+});
