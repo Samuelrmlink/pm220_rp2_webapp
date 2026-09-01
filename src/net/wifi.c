@@ -688,13 +688,23 @@ void wifi_status_json(char *buf, size_t cap) {
     } else if (ap_up) {
         snprintf(ip, sizeof(ip), "192.168.4.1");
     }
+    char mdns_e[128];
+    char ap_e[WIFI_SSID_MAX * 2 + 4];
+    char pass_e[WIFI_PSK_MAX * 2 + 4];
+    char sta_e[WIFI_SSID_MAX * 2 + 4];
+    char err_e[96];
+    json_esc(mdns_e, sizeof(mdns_e), mdns_hostname());
+    json_esc(ap_e, sizeof(ap_e), ap_ssid);
+    json_esc(pass_e, sizeof(pass_e), ap_pass);
+    json_esc(sta_e, sizeof(sta_e), sta_ssid);
+    json_esc(err_e, sizeof(err_e), last_error);
     snprintf(buf, cap,
              "{\"ok\":true,\"mode\":\"%s\",\"mdns\":\"%s\",\"ap_ssid\":\"%s\","
-             "\"sta_ssid\":\"%s\",\"ip\":\"%s\",\"scan\":\"%s\","
+             "\"ap_password\":\"%s\",\"sta_ssid\":\"%s\",\"ip\":\"%s\",\"scan\":\"%s\","
              "\"scan_disturbs_ap\":true,\"ap_clients\":%d,\"connecting\":%s,"
              "\"last_error\":\"%s\"}",
-             mode, mdns_hostname(), ap_ssid, sta_ssid, ip, policy_str(policy),
-             ap_client_count(), connecting ? "true" : "false", last_error);
+             mode, mdns_e, ap_e, pass_e, sta_e, ip, policy_str(policy),
+             ap_client_count(), connecting ? "true" : "false", err_e);
 }
 
 static const char *auth_name(uint8_t a) {
@@ -729,10 +739,13 @@ void wifi_scan_json(char *buf, size_t cap) {
 void wifi_networks_json(char *buf, size_t cap) {
     size_t n = 0;
     n += (size_t)snprintf(buf + n, cap - n, "{\"scan\":\"%s\",\"networks\":[", policy_str(policy));
-    for (int i = 0; i < known_n && n + 48 < cap; i++) {
+    for (int i = 0; i < known_n && n + 200 < cap; i++) {
         char se[WIFI_SSID_MAX * 2 + 4];
+        char pe[WIFI_PSK_MAX * 2 + 4];
         json_esc(se, sizeof(se), known[i].ssid);
-        n += (size_t)snprintf(buf + n, cap - n, "%s{\"ssid\":\"%s\"}", i ? "," : "", se);
+        json_esc(pe, sizeof(pe), known[i].password);
+        n += (size_t)snprintf(buf + n, cap - n, "%s{\"ssid\":\"%s\",\"password\":\"%s\"}",
+                              i ? "," : "", se, pe);
     }
     snprintf(buf + n, cap - n, "]}");
 }

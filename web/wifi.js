@@ -32,7 +32,8 @@ export function bindWifiSettings({ setStatus }) {
     const knownEmpty = $("wifi-known-empty");
     const knownActions = $("wifi-known-actions");
 
-    let snapshot = { mdns: "", apSsid: "", scan: "idle" };
+    let snapshot = { mdns: "", apSsid: "", apPass: "", scan: "idle" };
+    let knownPass = {};
     let filling = false;
     let live = null;
     let pollTimer = 0;
@@ -60,7 +61,7 @@ export function bindWifiSettings({ setStatus }) {
         const psk = $("wifi-ap-psk").value;
         const scan = $("wifi-scan-policy").value;
         return mdns !== snapshot.mdns || ssid !== snapshot.apSsid ||
-            psk !== "" || scan !== snapshot.scan;
+            psk !== snapshot.apPass || scan !== snapshot.scan;
     }
 
     function updateSave() {
@@ -105,12 +106,13 @@ export function bindWifiSettings({ setStatus }) {
         $("wifi-mdns").value = st.mdns || "";
         $("wifi-mdns-hint").textContent = `http://${st.mdns || "pm220"}.local/`;
         $("wifi-ap-ssid").value = st.ap_ssid || "";
-        $("wifi-ap-psk").value = "";
+        $("wifi-ap-psk").value = st.ap_password || "";
         $("wifi-scan-policy").value = st.scan || "idle";
         filling = false;
         snapshot = {
             mdns: (st.mdns || "").toLowerCase(),
             apSsid: st.ap_ssid || "",
+            apPass: st.ap_password || "",
             scan: st.scan || "idle",
         };
         startApBtn.hidden = st.mode === "ap";
@@ -133,7 +135,9 @@ export function bindWifiSettings({ setStatus }) {
         }
     }
 
-    function knownRow(ssid) {
+    function knownRow(net) {
+        const ssid = net.ssid;
+        const pw = net.password || "";
         const li = document.createElement("li");
         li.dataset.ssid = ssid;
         if (ssid === selectedKnown) {
@@ -142,7 +146,10 @@ export function bindWifiSettings({ setStatus }) {
         const name = document.createElement("span");
         name.className = "wifi-ssid";
         name.textContent = ssid;
-        li.append(name);
+        const meta = document.createElement("span");
+        meta.className = "wifi-meta";
+        meta.textContent = pw || "(open)";
+        li.append(name, meta);
         li.addEventListener("click", () => {
             selectedKnown = ssid;
             paintKnownSelection();
@@ -162,12 +169,14 @@ export function bindWifiSettings({ setStatus }) {
             const data = await getWifiNetworks();
             const nets = data.networks || [];
             knownList.replaceChildren();
+            knownPass = {};
             if (selectedKnown && !nets.some((n) => n.ssid === selectedKnown)) {
                 selectedKnown = "";
             }
             for (const n of nets) {
                 if (n.ssid) {
-                    knownList.appendChild(knownRow(n.ssid));
+                    knownPass[n.ssid] = n.password || "";
+                    knownList.appendChild(knownRow(n));
                 }
             }
             knownEmpty.hidden = nets.length > 0;
@@ -266,7 +275,7 @@ export function bindWifiSettings({ setStatus }) {
         $("wifi-sub-form").hidden = !opts.form;
         $("wifi-sub-ssid").value = opts.ssid || "";
         $("wifi-sub-ssid").readOnly = !!opts.ssidReadOnly;
-        $("wifi-sub-psk").value = "";
+        $("wifi-sub-psk").value = opts.pskValue || "";
         $("wifi-sub-psk").placeholder = opts.pskPlaceholder || "";
         $("wifi-sub-psk-label").hidden = !!opts.pskHidden;
         $("wifi-sub-psk").hidden = !!opts.pskHidden;
@@ -286,6 +295,7 @@ export function bindWifiSettings({ setStatus }) {
 
     function openConnect(ap) {
         const openNet = !ap.auth || ap.auth === "open";
+        const stored = knownPass[ap.ssid];
         openSub({
             title: "Connect",
             text: "Saves this network and joins it. SoftAP drops if the join succeeds.",
@@ -293,6 +303,7 @@ export function bindWifiSettings({ setStatus }) {
             ssid: ap.ssid,
             ssidReadOnly: true,
             pskHidden: openNet,
+            pskValue: openNet ? "" : (stored || ""),
             pskPlaceholder: "",
             okLabel: "Connect",
             onOk: async () => {
@@ -319,7 +330,7 @@ export function bindWifiSettings({ setStatus }) {
         if (ssid !== snapshot.apSsid) {
             body.ap_ssid = ssid;
         }
-        if (psk) {
+        if (psk !== snapshot.apPass) {
             body.ap_password = psk;
         }
         if (scan !== snapshot.scan) {
@@ -421,11 +432,11 @@ export function bindWifiSettings({ setStatus }) {
         const old = selectedKnown;
         openSub({
             title: "Modify network",
-            text: "Password is never shown. Leave it blank to keep the stored key.",
+            text: "",
             form: true,
             ssid: old,
             ssidReadOnly: false,
-            pskPlaceholder: "unchanged",
+            pskValue: knownPass[old] || "",
             okLabel: "Save",
             onOk: async () => {
                 const ssid = $("wifi-sub-ssid").value.trim();
@@ -433,10 +444,7 @@ export function bindWifiSettings({ setStatus }) {
                 if (!ssid) {
                     throw new Error("ssid required");
                 }
-                const opts = {};
-                if (psk) {
-                    opts.password = psk;
-                }
+                const opts = { password: psk };
                 if (ssid !== old) {
                     opts.newSsid = ssid;
                 }

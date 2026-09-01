@@ -66,11 +66,11 @@ The board runs a Classic inquiry every 15 s until it finds a printer-like device
 GET  /api/status
 GET  /api/scan                      Bluetooth inquiry (not Wi-Fi)
 POST /api/scan
-GET  /api/wifi                      AP/STA status, mDNS name, scan policy
+GET  /api/wifi                      AP/STA status, mDNS name, SoftAP SSID/PSK, scan policy
 PUT  /api/wifi                      {"scan":"idle"|"always"|"never","mdns","ap_ssid","ap_password"}
 GET  /api/wifi/scan
 POST /api/wifi/scan                 start a Wi-Fi scan (briefly disturbs AP clients)
-GET  /api/wifi/networks             known SSIDs (no passwords)
+GET  /api/wifi/networks             known SSIDs and passwords
 PUT  /api/wifi/networks             {"ssid","password"?,"new_ssid"?} save/rename, no join
 POST /api/wifi/connect              {"ssid","password"?} save+join; omit password to join a known SSID
 DELETE /api/wifi/networks           {"ssid"}

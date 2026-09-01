@@ -82,7 +82,8 @@ def cmd_known(base: str) -> int:
         print("no known networks")
         return 0
     for n in nets:
-        print(f"  {n.get('ssid', '')}")
+        pw = n.get("password") or ""
+        print(f"  {n.get('ssid', '')}  {pw if pw else '(open)'}")
     return 0
 
 
