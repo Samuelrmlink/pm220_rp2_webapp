@@ -23,7 +23,6 @@
         <h1>PM220</h1>
         <button type="button" id="open">Open</button>
         <button type="button" id="save">Save</button>
-        <button type="button" id="del">Delete</button>
         <button type="button" id="print" class="primary">Print</button>
         <input id="file" type="file" accept=".json,.pm220.json,application/json" hidden>
         <input id="image-file" type="file" accept="image/png,image/jpeg,image/*" hidden>
@@ -147,6 +146,12 @@
                 <p class="warn warn-clip" id="warn-payload" hidden></p>
             </div>
             <div id="editor-pane" hidden>
+                <div id="nudge-pad" tabindex="0" aria-label="Move object">
+                    <button type="button" class="nudge-btn" tabindex="-1" data-dx="0" data-dy="-1" aria-label="Up">↑</button>
+                    <button type="button" class="nudge-btn" tabindex="-1" data-dx="-1" data-dy="0" aria-label="Left">←</button>
+                    <button type="button" class="nudge-btn" tabindex="-1" data-dx="1" data-dy="0" aria-label="Right">→</button>
+                    <button type="button" class="nudge-btn" tabindex="-1" data-dx="0" data-dy="1" aria-label="Down">↓</button>
+                </div>
                 <form id="form-text" hidden>
                     <label for="text">Text</label>
                     <textarea id="text"></textarea>
@@ -251,6 +256,7 @@
                         </div>
                     </div>
                 </form>
+                <button type="button" id="del">Delete object</button>
             </div>
         </aside>
     </main>

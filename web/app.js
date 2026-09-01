@@ -119,6 +119,7 @@ const editor = new Editor($("stage"), {
         paint();
         fillForm();
         saveScratch();
+        markNudgeFocus();
     },
     onSelect: (box) => focusPayload(box),
 });
@@ -209,6 +210,9 @@ function payloadEl(box) {
 function focusPayload(box) {
     const el = payloadEl(box);
     if (!el) {
+        if (box) {
+            setTimeout(() => $("nudge-pad").focus(), 0);
+        }
         return;
     }
     setTimeout(() => {
@@ -220,6 +224,87 @@ function focusPayload(box) {
             el.setSelectionRange(n, n);
         }
     }, 0);
+}
+
+const FORM_FOR = {
+    text: "form-text",
+    qr: "form-qr",
+    barcode1d: "form-barcode",
+    image: "form-image",
+};
+
+function isNudgeFocused() {
+    const pad = $("nudge-pad");
+    const el = document.activeElement;
+    return el === pad || (pad && pad.contains(el));
+}
+
+function markNudgeFocus() {
+    const on = isNudgeFocused();
+    const boxEl = document.querySelector(".tbox.selected");
+    if (boxEl) {
+        boxEl.classList.toggle("nudge", on);
+    }
+}
+
+function nudgeSelected(dx, dy) {
+    const box = editor.selected();
+    if (!box) {
+        return;
+    }
+    editor.updateSelected({ x: box.x + dx, y: box.y + dy });
+}
+
+function isShownControl(el) {
+    if (!el || el.disabled || el.tabIndex < 0) {
+        return false;
+    }
+    if (el.closest("[hidden]")) {
+        return false;
+    }
+    const st = getComputedStyle(el);
+    if (st.display === "none" || st.visibility === "hidden") {
+        return false;
+    }
+    return true;
+}
+
+function controlsIn(form) {
+    if (!form) {
+        return [];
+    }
+    return [...form.querySelectorAll("input, select, textarea, button")].filter(isShownControl);
+}
+
+function nextAfterNudge(box) {
+    const skip = new Set(["font"]);
+    const typeForm = $(FORM_FOR[box.type] || "");
+    const pay = payloadEl(box);
+    const inType = controlsIn(typeForm);
+    const afterPay = pay ? inType.slice(inType.indexOf(pay) + 1) : inType;
+    const fromType = afterPay.find((el) => !skip.has(el.id));
+    if (fromType) {
+        return fromType;
+    }
+    return controlsIn($("form-common"))[0] || null;
+}
+
+function tabAfterPayload(box) {
+    if (!box) {
+        return false;
+    }
+    const pay = payloadEl(box);
+    const pad = $("nudge-pad");
+    const next = nextAfterNudge(box);
+    const active = document.activeElement;
+    return {
+        pay,
+        pad,
+        next,
+        fromPay: pay && active === pay,
+        fromPad: isNudgeFocused(),
+        fromNext: next && (active === next || next.contains(active)),
+    };
 }
 
 function payloadWarning(box) {
@@ -467,8 +552,40 @@ document.addEventListener("keydown", (e) => {
     if (picker.isOpen() || wifiUi.isOpen()) {
         return;
     }
+    const box = editor.selected();
+    if (box && e.key === "Tab") {
+        const t = tabAfterPayload(box);
+        if (!e.shiftKey && t.fromPay) {
+            e.preventDefault();
+            t.pad.focus();
+            markNudgeFocus();
+            return;
+        }
+        if (!e.shiftKey && t.fromPad) {
+            e.preventDefault();
+            if (t.next) {
+                t.next.focus();
+            }
+            markNudgeFocus();
+            return;
+        }
+        if (e.shiftKey && t.fromNext) {
+            e.preventDefault();
+            t.pad.focus();
+            markNudgeFocus();
+            return;
+        }
+        if (e.shiftKey && t.fromPad) {
+            e.preventDefault();
+            if (t.pay) {
+                t.pay.focus();
+            }
+            markNudgeFocus();
+            return;
+        }
+    }
     const inField = e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT");
-    if (e.key === "Delete" && editor.selected()) {
+    if (e.key === "Delete" && box) {
         e.preventDefault();
         editor.removeSelected();
         return;
@@ -480,7 +597,34 @@ document.addEventListener("keydown", (e) => {
         }
         return;
     }
-    if (e.key === "Backspace" && editor.selected()) {
+    if (isNudgeFocused() && box) {
+        const step = e.shiftKey ? 8 : 1;
+        const keys = {
+            ArrowLeft: [-step, 0],
+            ArrowRight: [step, 0],
+            ArrowUp: [0, -step],
+            ArrowDown: [0, step],
+            h: [-step, 0],
+            l: [step, 0],
+            k: [0, -step],
+            j: [0, step],
+            H: [-8, 0],
+            L: [8, 0],
+            K: [0, -8],
+            J: [0, 8],
+        };
+        const delta = keys[e.key];
+        if (delta) {
+            e.preventDefault();
+            nudgeSelected(delta[0], delta[1]);
+            return;
+        }
+        if (e.key === "Backspace") {
+            e.preventDefault();
+            return;
+        }
+    }
+    if (e.key === "Backspace" && box) {
         e.preventDefault();
         editor.removeSelected();
     }
@@ -488,6 +632,39 @@ document.addEventListener("keydown", (e) => {
         editor.select(null);
     }
 });
+
+$("nudge-pad").addEventListener("focusin", markNudgeFocus);
+$("nudge-pad").addEventListener("focusout", () => setTimeout(markNudgeFocus, 0));
+
+{
+    let holdWait = 0;
+    let holdRep = 0;
+    const stopHold = () => {
+        clearTimeout(holdWait);
+        clearInterval(holdRep);
+        holdWait = 0;
+        holdRep = 0;
+    };
+    $("nudge-pad").addEventListener("pointerdown", (e) => {
+        const btn = e.target.closest(".nudge-btn");
+        if (!btn || !editor.selected()) {
+            return;
+        }
+        e.preventDefault();
+        const dx = Number(btn.dataset.dx) || 0;
+        const dy = Number(btn.dataset.dy) || 0;
+        $("nudge-pad").focus();
+        nudgeSelected(dx, dy);
+        stopHold();
+        holdWait = setTimeout(() => {
+            holdRep = setInterval(() => nudgeSelected(dx, dy), 50);
+        }, 300);
+        btn.setPointerCapture?.(e.pointerId);
+    });
+    $("nudge-pad").addEventListener("pointerup", stopHold);
+    $("nudge-pad").addEventListener("pointercancel", stopHold);
+    $("nudge-pad").addEventListener("lostpointercapture", stopHold);
+}
 
 function setStatus(msg, kind) {
     const el = $("status");
