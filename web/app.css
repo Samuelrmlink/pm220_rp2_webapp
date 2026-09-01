@@ -158,6 +158,45 @@ main {
     outline: 2px solid var(--accent);
 }
 
+.tbox.preview {
+    outline: 2px dashed var(--accent);
+    outline-offset: -1px;
+}
+
+.obj-nav {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.obj-nav-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin: 0 0 4px;
+    font-weight: 600;
+}
+
+.obj-nav button {
+    width: 100%;
+    text-align: left;
+}
+
+.kbd-hints {
+    display: none;
+    margin: 8px 0 0;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--muted);
+    white-space: pre-line;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .kbd-hints { display: block; }
+}
+
 .handle {
     position: absolute;
     width: 8px;
@@ -338,7 +377,16 @@ aside .empty {
     border-color: var(--danger);
 }
 
-#nudge-pad {
+.pad-label {
+    display: none;
+    margin: 8px 0 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.dpad {
     display: grid;
     grid-template-columns: repeat(3, 44px);
     grid-template-rows: repeat(3, 44px);
@@ -347,10 +395,16 @@ aside .empty {
         "left . right"
         ". down .";
     gap: 6px;
-    margin: 0 0 12px;
+    margin: 0 0 8px;
     touch-action: manipulation;
     justify-content: start;
     outline: none;
+}
+
+.dpad-sm {
+    grid-template-columns: repeat(3, 36px);
+    grid-template-rows: repeat(3, 36px);
+    gap: 4px;
 }
 
 #nudge-pad:focus {
@@ -358,22 +412,33 @@ aside .empty {
     outline-offset: 2px;
 }
 
-#nudge-pad .nudge-btn {
+.dpad .nudge-btn {
     display: block;
-    width: 44px;
-    height: 44px;
+    width: 100%;
+    height: 100%;
     padding: 0;
     font-size: 18px;
     line-height: 1;
     touch-action: manipulation;
 }
 
-#nudge-pad .nudge-btn[data-dy="-1"] { grid-area: up; }
-#nudge-pad .nudge-btn[data-dx="-1"] { grid-area: left; }
-#nudge-pad .nudge-btn[data-dx="1"] { grid-area: right; }
-#nudge-pad .nudge-btn[data-dy="1"] { grid-area: down; }
+.dpad-sm .nudge-btn { font-size: 15px; }
+
+.dpad .nudge-btn[data-dy="-1"],
+.dpad .nudge-btn[data-dh="-1"] { grid-area: up; }
+.dpad .nudge-btn[data-dx="-1"],
+.dpad .nudge-btn[data-dw="-1"] { grid-area: left; }
+.dpad .nudge-btn[data-dx="1"],
+.dpad .nudge-btn[data-dw="1"] { grid-area: right; }
+.dpad .nudge-btn[data-dy="1"],
+.dpad .nudge-btn[data-dh="1"] { grid-area: down; }
+
+@media (max-width: 900px), (pointer: coarse) {
+    .pad-label { display: block; }
+}
 
 @media (hover: hover) and (pointer: fine) and (min-width: 901px) {
+    .pad-label { display: none; }
     #nudge-pad {
         position: absolute;
         width: 1px;
@@ -387,6 +452,7 @@ aside .empty {
         gap: 0;
     }
     #nudge-pad .nudge-btn { display: none; }
+    #resize-pad { display: none; }
 }
 
 .warn {

@@ -271,13 +271,6 @@ function focusPayload(box) {
     }, 0);
 }
 
-const FORM_FOR = {
-    text: "form-text",
-    qr: "form-qr",
-    barcode1d: "form-barcode",
-    image: "form-image",
-};
-
 function isNudgeFocused() {
     const pad = $("nudge-pad");
     const el = document.activeElement;
@@ -300,6 +293,19 @@ function nudgeSelected(dx, dy) {
     editor.updateSelected({ x: box.x + dx, y: box.y + dy });
 }
 
+function resizeSelected(dw, dh) {
+    const box = editor.selected();
+    if (!box) {
+        return;
+    }
+    if (box.type === "qr") {
+        const d = dw !== 0 ? dw : dh;
+        editor.updateSelected({ width: box.width + d, height: box.height + d });
+        return;
+    }
+    editor.updateSelected({ width: box.width + dw, height: box.height + dh });
+}
+
 function isShownControl(el) {
     if (!el || el.disabled || el.tabIndex < 0) {
         return false;
@@ -314,42 +320,51 @@ function isShownControl(el) {
     return true;
 }
 
-function controlsIn(form) {
-    if (!form) {
-        return [];
-    }
-    return [...form.querySelectorAll("input, select, textarea, button")].filter(isShownControl);
-}
-
-function nextAfterNudge(box) {
-    const skip = new Set(["font"]);
-    const typeForm = $(FORM_FOR[box.type] || "");
+function editorTabOrder(box) {
+    const pad = $("nudge-pad");
     const pay = payloadEl(box);
-    const inType = controlsIn(typeForm);
-    const afterPay = pay ? inType.slice(inType.indexOf(pay) + 1) : inType;
-    const fromType = afterPay.find((el) => !skip.has(el.id));
-    if (fromType) {
-        return fromType;
+    const skip = new Set(["font", "del", "pane-close"]);
+    const rest = [];
+    const root = $("editor-pane");
+    for (const el of root.querySelectorAll("input, select, textarea, button, [tabindex]")) {
+        if (el === pad || el === pay || skip.has(el.id) || el.classList.contains("nudge-btn")) {
+            continue;
+        }
+        if (!isShownControl(el)) {
+            continue;
+        }
+        rest.push(el);
     }
-    return controlsIn($("form-common"))[0] || null;
+    const order = [];
+    if (pay) {
+        order.push(pay);
+    }
+    order.push(pad);
+    order.push(...rest);
+    return order;
 }
 
-function tabAfterPayload(box) {
+function moveEditorFocus(dir) {
+    const box = editor.selected();
     if (!box) {
         return false;
     }
-    const pay = payloadEl(box);
-    const pad = $("nudge-pad");
-    const next = nextAfterNudge(box);
+    const order = editorTabOrder(box);
+    if (!order.length) {
+        return false;
+    }
     const active = document.activeElement;
-    return {
-        pay,
-        pad,
-        next,
-        fromPay: pay && active === pay,
-        fromPad: isNudgeFocused(),
-        fromNext: next && (active === next || next.contains(active)),
-    };
+    let i = order.findIndex((el) => el === active || el.contains(active));
+    if (i < 0) {
+        i = dir > 0 ? -1 : 0;
+    }
+    const next = order[(i + dir + order.length) % order.length];
+    if (next) {
+        next.focus();
+        markNudgeFocus();
+        return true;
+    }
+    return false;
 }
 
 function payloadWarning(box) {
@@ -566,6 +581,9 @@ $("image-file").addEventListener("change", async (e) => {
 
 $("del").addEventListener("click", () => editor.removeSelected());
 $("pane-close").addEventListener("click", () => editor.select(null));
+$("obj-next").addEventListener("click", () => editor.cyclePreview(1));
+$("obj-prev").addEventListener("click", () => editor.cyclePreview(-1));
+$("obj-select").addEventListener("click", () => editor.confirmPreview());
 
 let picoName = "";
 const picker = bindPicker({
@@ -599,33 +617,28 @@ document.addEventListener("keydown", (e) => {
     }
     const box = editor.selected();
     if (box && e.key === "Tab") {
-        const t = tabAfterPayload(box);
-        if (!e.shiftKey && t.fromPay) {
-            e.preventDefault();
-            t.pad.focus();
-            markNudgeFocus();
-            return;
+        e.preventDefault();
+        moveEditorFocus(e.shiftKey ? -1 : 1);
+        return;
+    }
+    const typing = e.target && (
+        e.target.tagName === "TEXTAREA" ||
+        (e.target.tagName === "INPUT" && !isNumField(e.target))
+    );
+    if (!typing && (e.key === "n" || e.key === "N")) {
+        e.preventDefault();
+        if (box) {
+            moveEditorFocus(e.key === "N" ? -1 : 1);
+        } else {
+            editor.cyclePreview(e.key === "N" ? -1 : 1);
         }
-        if (!e.shiftKey && t.fromPad) {
+        return;
+    }
+    if (!box && (e.key === " " || e.key === "Enter")) {
+        const tag = e.target && e.target.tagName;
+        if (tag !== "BUTTON" && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
             e.preventDefault();
-            if (t.next) {
-                t.next.focus();
-            }
-            markNudgeFocus();
-            return;
-        }
-        if (e.shiftKey && t.fromNext) {
-            e.preventDefault();
-            t.pad.focus();
-            markNudgeFocus();
-            return;
-        }
-        if (e.shiftKey && t.fromPad) {
-            e.preventDefault();
-            if (t.pay) {
-                t.pay.focus();
-            }
-            markNudgeFocus();
+            editor.confirmPreview();
             return;
         }
     }
@@ -661,25 +674,28 @@ document.addEventListener("keydown", (e) => {
         return;
     }
     if (isNudgeFocused() && box) {
-        const step = e.shiftKey ? 8 : 1;
         const keys = {
-            ArrowLeft: [-step, 0],
-            ArrowRight: [step, 0],
-            ArrowUp: [0, -step],
-            ArrowDown: [0, step],
-            h: [-step, 0],
-            l: [step, 0],
-            k: [0, -step],
-            j: [0, step],
-            H: [-8, 0],
-            L: [8, 0],
-            K: [0, -8],
-            J: [0, 8],
+            ArrowLeft: [-1, 0],
+            ArrowRight: [1, 0],
+            ArrowUp: [0, -1],
+            ArrowDown: [0, 1],
+            h: [-1, 0],
+            l: [1, 0],
+            k: [0, -1],
+            j: [0, 1],
+            H: [-1, 0],
+            L: [1, 0],
+            K: [0, -1],
+            J: [0, 1],
         };
         const delta = keys[e.key];
         if (delta) {
             e.preventDefault();
-            nudgeSelected(delta[0], delta[1]);
+            if (e.shiftKey) {
+                resizeSelected(delta[0], delta[1]);
+            } else {
+                nudgeSelected(delta[0], delta[1]);
+            }
             return;
         }
         if (e.key === "Backspace") {
@@ -727,6 +743,35 @@ $("nudge-pad").addEventListener("focusout", () => setTimeout(markNudgeFocus, 0))
     $("nudge-pad").addEventListener("pointerup", stopHold);
     $("nudge-pad").addEventListener("pointercancel", stopHold);
     $("nudge-pad").addEventListener("lostpointercapture", stopHold);
+}
+
+{
+    let holdWait = 0;
+    let holdRep = 0;
+    const stopHold = () => {
+        clearTimeout(holdWait);
+        clearInterval(holdRep);
+        holdWait = 0;
+        holdRep = 0;
+    };
+    $("resize-pad").addEventListener("pointerdown", (e) => {
+        const btn = e.target.closest(".nudge-btn");
+        if (!btn || !editor.selected()) {
+            return;
+        }
+        e.preventDefault();
+        const dw = Number(btn.dataset.dw) || 0;
+        const dh = Number(btn.dataset.dh) || 0;
+        resizeSelected(dw, dh);
+        stopHold();
+        holdWait = setTimeout(() => {
+            holdRep = setInterval(() => resizeSelected(dw, dh), 50);
+        }, 300);
+        btn.setPointerCapture?.(e.pointerId);
+    });
+    $("resize-pad").addEventListener("pointerup", stopHold);
+    $("resize-pad").addEventListener("pointercancel", stopHold);
+    $("resize-pad").addEventListener("lostpointercapture", stopHold);
 }
 
 function wrapNumSpins() {

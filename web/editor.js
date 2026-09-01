@@ -115,6 +115,7 @@ export class Editor {
         this.onSelect = opts.onSelect || (() => {});
         this.boxes = [];
         this.selectedId = null;
+        this.previewId = null;
         this.drag = null;
         this.overlay = document.createElement("div");
         this.overlay.className = "box-layer";
@@ -161,6 +162,7 @@ export class Editor {
         }
         this.boxes = this.boxes.filter((b) => b.id !== this.selectedId);
         this.selectedId = null;
+        this.previewId = null;
         this.syncDom();
         this.onChange();
     }
@@ -170,12 +172,36 @@ export class Editor {
     }
 
     select(id, opts) {
+        this.previewId = null;
         this.selectedId = id;
         this.syncDom();
         this.onChange();
         if (opts && opts.focus && id != null) {
             this.onSelect(this.selected());
         }
+    }
+
+    cyclePreview(dir) {
+        if (!this.boxes.length) {
+            return;
+        }
+        let i = this.boxes.findIndex((b) => b.id === this.previewId);
+        if (i < 0) {
+            i = dir > 0 ? -1 : 0;
+        }
+        i = (i + dir + this.boxes.length) % this.boxes.length;
+        this.previewId = this.boxes[i].id;
+        this.syncDom();
+    }
+
+    confirmPreview() {
+        const id = this.previewId != null
+            ? this.previewId
+            : (this.boxes[0] ? this.boxes[0].id : null);
+        if (id == null) {
+            return;
+        }
+        this.select(id, { focus: true });
     }
 
     updateSelected(patch) {
@@ -201,6 +227,7 @@ export class Editor {
             this.boxes.push(copy);
         }
         this.selectedId = null;
+        this.previewId = null;
         this.syncDom();
         this.onChange();
     }
@@ -221,12 +248,14 @@ export class Editor {
             }
             if (box.id === this.selectedId) {
                 el.classList.add("selected");
+            } else if (box.id === this.previewId) {
+                el.classList.add("preview");
             }
             el.style.left = `${g.x * s}px`;
             el.style.top = `${g.y * s}px`;
             el.style.width = `${g.width * s}px`;
             el.style.height = `${g.height * s}px`;
-            el.style.zIndex = box.id === this.selectedId ? "2" : "1";
+            el.style.zIndex = (box.id === this.selectedId || box.id === this.previewId) ? "2" : "1";
             el.addEventListener("pointerdown", (e) => this.onBoxDown(e, box, "move"));
             if (box.id === this.selectedId) {
                 for (const corner of ["nw", "ne", "sw", "se"]) {

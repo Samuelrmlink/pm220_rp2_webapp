@@ -139,6 +139,16 @@
                 <button type="button" id="add-image">Image</button>
                 <button type="button" id="add-qr">QR code</button>
                 <button type="button" id="add-barcode">1D barcode</button>
+                <div class="obj-nav">
+                    <h3 class="obj-nav-title">Select Object</h3>
+                    <button type="button" id="obj-next">Next Object</button>
+                    <button type="button" id="obj-prev">Previous Object</button>
+                    <button type="button" id="obj-select">Select Object</button>
+                    <p class="kbd-hints">Keyboard hints:<br>
+                    n — Next Object<br>
+                    N — Previous Object<br>
+                    Space — Select Object</p>
+                </div>
             </div>
             <div id="warn" hidden>
                 <p class="warn warn-overflow" id="warn-overflow" hidden>Box extends outside the printable area.</p>
@@ -146,11 +156,19 @@
                 <p class="warn warn-clip" id="warn-payload" hidden></p>
             </div>
             <div id="editor-pane" hidden>
-                <div id="nudge-pad" tabindex="0" aria-label="Move object">
+                <p class="pad-label">Move</p>
+                <div id="nudge-pad" class="dpad" tabindex="0" aria-label="Move object">
                     <button type="button" class="nudge-btn" tabindex="-1" data-dx="0" data-dy="-1" aria-label="Up">↑</button>
                     <button type="button" class="nudge-btn" tabindex="-1" data-dx="-1" data-dy="0" aria-label="Left">←</button>
                     <button type="button" class="nudge-btn" tabindex="-1" data-dx="1" data-dy="0" aria-label="Right">→</button>
                     <button type="button" class="nudge-btn" tabindex="-1" data-dx="0" data-dy="1" aria-label="Down">↓</button>
+                </div>
+                <p class="pad-label">Resize</p>
+                <div id="resize-pad" class="dpad dpad-sm" aria-label="Resize object">
+                    <button type="button" class="nudge-btn" tabindex="-1" data-dw="0" data-dh="-1" aria-label="Shorter">↑</button>
+                    <button type="button" class="nudge-btn" tabindex="-1" data-dw="-1" data-dh="0" aria-label="Narrower">←</button>
+                    <button type="button" class="nudge-btn" tabindex="-1" data-dw="1" data-dh="0" aria-label="Wider">→</button>
+                    <button type="button" class="nudge-btn" tabindex="-1" data-dw="0" data-dh="1" aria-label="Taller">↓</button>
                 </div>
                 <form id="form-text" hidden>
                     <label for="text">Text</label>
