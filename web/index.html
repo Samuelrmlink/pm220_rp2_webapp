@@ -2,8 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>PM220 editor</title>
+    <script>
+    (function () {
+        var m = document.querySelector('meta[name="viewport"]');
+        var lock = "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
+        if (!m) {
+            return;
+        }
+        /* Safari can restore a pinch scale across refresh; this snap-back unsticks it. */
+        m.setAttribute("content", "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes");
+        m.setAttribute("content", lock);
+    })();
+    </script>
     <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -140,7 +152,7 @@
                         <option value="Arial">Arial</option>
                     </select>
                     <label for="size">Size (dots)</label>
-                    <input id="size" type="number" min="4" max="240" step="1">
+                    <input id="size" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
                     <div class="checks">
                         <label><input type="checkbox" id="autoSize"> Auto size</label>
                         <label><input type="checkbox" id="wrap"> Word wrap</label>
@@ -187,11 +199,11 @@
                     <div class="row">
                         <div>
                             <label for="bc-font">Text size</label>
-                            <input id="bc-font" type="number" min="4" max="72" step="1">
+                            <input id="bc-font" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
                         </div>
                         <div>
                             <label for="bc-off">Offset from bottom</label>
-                            <input id="bc-off" type="number" step="1">
+                            <input id="bc-off" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
                         </div>
                     </div>
                 </form>
@@ -229,10 +241,10 @@
                             <label for="oy">y</label>
                             <label for="ow">w</label>
                             <label for="oh">h</label>
-                            <input id="ox" type="number" step="1">
-                            <input id="oy" type="number" step="1">
-                            <input id="ow" type="number" step="1" min="8">
-                            <input id="oh" type="number" step="1" min="8">
+                            <input id="ox" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+                            <input id="oy" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+                            <input id="ow" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+                            <input id="oh" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
                         </div>
                     </div>
                 </form>

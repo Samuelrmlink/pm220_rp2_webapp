@@ -41,6 +41,19 @@ export function bindWifiSettings({ setStatus }) {
     let scanStarted = false;
     let scanning = false;
     let subOk = null;
+    let wifiEpoch = 0;
+    let wifiAbort = null;
+
+    function wifiLive() {
+        return !overlay.hidden;
+    }
+
+    function wifiSignal() {
+        if (!wifiAbort) {
+            wifiAbort = new AbortController();
+        }
+        return wifiAbort.signal;
+    }
 
     function showErr(el, msg) {
         if (!msg) {
@@ -121,8 +134,14 @@ export function bindWifiSettings({ setStatus }) {
     }
 
     async function refreshLive() {
+        if (!wifiLive()) {
+            return;
+        }
         try {
-            const st = await getWifi();
+            const st = await getWifi({ signal: wifiSignal() });
+            if (!wifiLive()) {
+                return;
+            }
             live = st;
             $("wifi-live").textContent = liveLine(st);
             startApBtn.hidden = st.mode === "ap";
@@ -131,6 +150,12 @@ export function bindWifiSettings({ setStatus }) {
                 fillFromStatus(st);
             }
         } catch (err) {
+            if (err && err.name === "AbortError") {
+                return;
+            }
+            if (!wifiLive()) {
+                return;
+            }
             $("wifi-live").textContent = String(err.message || err);
         }
     }
@@ -165,8 +190,14 @@ export function bindWifiSettings({ setStatus }) {
     }
 
     async function refreshKnown() {
+        if (!wifiLive()) {
+            return;
+        }
         try {
-            const data = await getWifiNetworks();
+            const data = await getWifiNetworks({ signal: wifiSignal() });
+            if (!wifiLive()) {
+                return;
+            }
             const nets = data.networks || [];
             knownList.replaceChildren();
             knownPass = {};
@@ -244,7 +275,13 @@ export function bindWifiSettings({ setStatus }) {
             let seen = false;
             let data = { scanning: true, aps: [] };
             while (Date.now() - t0 < 12000) {
-                data = await getWifiScan();
+                if (!wifiLive()) {
+                    return;
+                }
+                data = await getWifiScan({ signal: wifiSignal() });
+                if (!wifiLive()) {
+                    return;
+                }
                 paintScan(data);
                 if (data.scanning) {
                     seen = true;
@@ -252,6 +289,9 @@ export function bindWifiSettings({ setStatus }) {
                     break;
                 }
                 await sleep(400);
+            }
+            if (!wifiLive()) {
+                return;
             }
             paintScan(data);
         } catch (err) {
@@ -350,40 +390,72 @@ export function bindWifiSettings({ setStatus }) {
     }
 
     async function open() {
+        const epoch = ++wifiEpoch;
         showErr(errEl, "");
         selectedKnown = "";
         overlay.hidden = false;
+        if (wifiAbort) {
+            wifiAbort.abort();
+        }
+        wifiAbort = new AbortController();
         setTab("mdns");
         try {
-            const st = await getWifi();
+            const st = await getWifi({ signal: wifiSignal() });
+            if (epoch !== wifiEpoch || !wifiLive()) {
+                return;
+            }
             fillFromStatus(st);
         } catch (err) {
+            if (err && err.name === "AbortError") {
+                return;
+            }
+            if (epoch !== wifiEpoch || !wifiLive()) {
+                return;
+            }
             showErr(errEl, String(err.message || err));
         }
         await refreshKnown();
+        if (epoch !== wifiEpoch || !wifiLive()) {
+            return;
+        }
         if (scanStarted) {
             try {
-                paintScan(await getWifiScan());
+                paintScan(await getWifiScan({ signal: wifiSignal() }));
             } catch {
                 /* keep last list */
             }
         }
-        if (pollTimer) {
-            clearInterval(pollTimer);
+        if (epoch !== wifiEpoch || !wifiLive()) {
+            return;
         }
+        startLivePoll();
+    }
+
+    function startLivePoll() {
+        stopLivePoll();
         pollTimer = setInterval(() => {
             if (!overlay.hidden) {
                 refreshLive();
             }
-        }, 1000);
+        }, 4000);
     }
 
-    function close() {
-        closeSub();
-        overlay.hidden = true;
+    function stopLivePoll() {
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = 0;
+        }
+    }
+
+    function close() {
+        wifiEpoch++;
+        scanning = false;
+        closeSub();
+        overlay.hidden = true;
+        stopLivePoll();
+        if (wifiAbort) {
+            wifiAbort.abort();
+            wifiAbort = null;
         }
     }
 

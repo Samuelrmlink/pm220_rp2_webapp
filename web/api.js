@@ -12,8 +12,12 @@ export function apiBase() {
     return "http://pm220.local";
 }
 
-async function getJson(path) {
-    const r = await fetch(apiBase() + path);
+async function getJson(path, opts) {
+    const sep = path.includes("?") ? "&" : "?";
+    const r = await fetch(apiBase() + path + sep + "_=" + Date.now(), {
+        cache: "no-store",
+        ...opts,
+    });
     if (!r.ok) {
         throw new Error(`${path} ${r.status}`);
     }
@@ -104,8 +108,8 @@ export async function gzipUtf8(text) {
     return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-export function getWifi() {
-    return getJson("/api/wifi");
+export function getWifi(opts) {
+    return getJson("/api/wifi", opts);
 }
 
 export function putWifi(body) {
@@ -120,12 +124,12 @@ export function startWifiScan() {
     return fsJson("/api/wifi/scan", { method: "POST" });
 }
 
-export function getWifiScan() {
-    return getJson("/api/wifi/scan");
+export function getWifiScan(opts) {
+    return getJson("/api/wifi/scan", opts);
 }
 
-export function getWifiNetworks() {
-    return getJson("/api/wifi/networks");
+export function getWifiNetworks(opts) {
+    return getJson("/api/wifi/networks", opts);
 }
 
 export function putWifiNetwork(ssid, opts) {

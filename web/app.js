@@ -33,6 +33,76 @@ const TITLES = {
 };
 
 const $ = (id) => document.getElementById(id);
+const INT_RE = /^-?\d+$/;
+
+const VIEWPORT_LOCK =
+    "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
+
+function lockViewport() {
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+        return;
+    }
+    meta.setAttribute(
+        "content",
+        "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes",
+    );
+    requestAnimationFrame(() => {
+        meta.setAttribute("content", VIEWPORT_LOCK);
+    });
+}
+
+lockViewport();
+window.addEventListener("pageshow", lockViewport);
+window.addEventListener("orientationchange", () => setTimeout(lockViewport, 50));
+
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) {
+    document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+}
+
+document.addEventListener("touchstart", (e) => {
+    if (e.touches.length > 1) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
+document.addEventListener("touchmove", (e) => {
+    if (e.touches.length > 1 || (typeof e.scale === "number" && e.scale !== 1)) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
+let lastTapAt = 0;
+document.addEventListener("touchend", (e) => {
+    if (e.target && e.target.closest && e.target.closest("input, textarea, select, button, a")) {
+        lastTapAt = Date.now();
+        return;
+    }
+    const now = Date.now();
+    if (now - lastTapAt < 350) {
+        e.preventDefault();
+    }
+    lastTapAt = now;
+}, { passive: false });
+
+function setField(id, value) {
+    const el = $(id);
+    if (document.activeElement === el) {
+        return;
+    }
+    el.value = value;
+}
+
+function parseIntField(id) {
+    const el = $(id);
+    const raw = String(el.value || "").trim();
+    if (!INT_RE.test(raw)) {
+        return null;
+    }
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+}
+
 const preview = $("preview");
 const pctx = preview.getContext("2d", { willReadFrequently: true });
 pctx.imageSmoothingEnabled = false;
@@ -188,18 +258,15 @@ function fillForm() {
         return;
     }
     $("rotate").value = String(box.rotate || 0);
-    $("ox").value = box.x;
-    $("oy").value = box.y;
-    $("ow").value = box.width;
-    $("oh").value = box.height;
+    setField("ox", box.x);
+    setField("oy", box.y);
+    setField("ow", box.width);
+    setField("oh", box.height);
     if (box.type === "text") {
         $("size").disabled = !!box.autoSize;
-        const el = $("text");
-        if (document.activeElement !== el) {
-            el.value = box.text;
-        }
+        setField("text", box.text);
         $("font").value = box.font || "Arial";
-        $("size").value = box.size;
+        setField("size", box.size);
         $("autoSize").checked = !!box.autoSize;
         $("wrap").checked = !!box.wrap;
         $("bold").checked = !!box.bold;
@@ -208,19 +275,15 @@ function fillForm() {
         $("align").value = box.align;
         $("valign").value = box.valign;
     } else if (box.type === "qr") {
-        if (document.activeElement !== $("qr-payload")) {
-            $("qr-payload").value = box.payload || "";
-        }
+        setField("qr-payload", box.payload || "");
         $("qr-pixel").checked = !!box.pixelPerfect;
         $("qr-ecc").value = box.ecc || "M";
     } else if (box.type === "barcode1d") {
-        if (document.activeElement !== $("bc-payload")) {
-            $("bc-payload").value = box.payload || "";
-        }
+        setField("bc-payload", box.payload || "");
         $("bc-sym").value = box.symbology || "code128";
         $("bc-text").checked = box.showText !== false;
-        $("bc-font").value = box.textSize ?? 12;
-        $("bc-off").value = box.textOffset ?? 7;
+        setField("bc-font", box.textSize ?? 12);
+        setField("bc-off", box.textOffset ?? 7);
     } else if (box.type === "image") {
         $("img-dither").checked = box.dither !== false;
     }
@@ -233,16 +296,27 @@ function readForm() {
     }
     const patch = {
         rotate: Number($("rotate").value),
-        x: Number($("ox").value),
-        y: Number($("oy").value),
-        width: Number($("ow").value),
-        height: Number($("oh").value),
     };
+    const x = parseIntField("ox");
+    const y = parseIntField("oy");
+    const w = parseIntField("ow");
+    const h = parseIntField("oh");
+    if (x != null) {
+        patch.x = x;
+    }
+    if (y != null) {
+        patch.y = y;
+    }
+    if (w != null) {
+        patch.width = w;
+    }
+    if (h != null) {
+        patch.height = h;
+    }
     if (box.type === "text") {
         Object.assign(patch, {
             text: $("text").value,
             font: $("font").value,
-            size: Number($("size").value),
             autoSize: $("autoSize").checked,
             wrap: $("wrap").checked,
             bold: $("bold").checked,
@@ -251,13 +325,17 @@ function readForm() {
             align: $("align").value,
             valign: $("valign").value,
         });
+        const size = parseIntField("size");
+        if (size != null) {
+            patch.size = size;
+        }
     } else if (box.type === "qr") {
         Object.assign(patch, {
             payload: $("qr-payload").value,
             ecc: $("qr-ecc").value,
             pixelPerfect: $("qr-pixel").checked,
         });
-        if (patch.width !== patch.height) {
+        if (patch.width != null && patch.width !== patch.height) {
             patch.height = patch.width;
         }
     } else if (box.type === "barcode1d") {
@@ -265,9 +343,15 @@ function readForm() {
             payload: $("bc-payload").value,
             symbology: $("bc-sym").value,
             showText: $("bc-text").checked,
-            textSize: Number($("bc-font").value),
-            textOffset: Number($("bc-off").value),
         });
+        const textSize = parseIntField("bc-font");
+        const textOffset = parseIntField("bc-off");
+        if (textSize != null) {
+            patch.textSize = textSize;
+        }
+        if (textOffset != null) {
+            patch.textOffset = textOffset;
+        }
     } else if (box.type === "image") {
         patch.dither = $("img-dither").checked;
     }
@@ -318,6 +402,10 @@ $("editor-pane").addEventListener("input", (e) => {
         return;
     }
     editor.updateSelected(readForm());
+});
+
+$("editor-pane").addEventListener("focusout", () => {
+    setTimeout(fillForm, 0);
 });
 
 $("add-text").addEventListener("click", () => editor.addBox(defaultText(page, editor.safe)));
@@ -405,19 +493,49 @@ function setStatus(msg, kind) {
     el.className = kind || "";
 }
 
+let statusTimer = 0;
+let statusBusy = false;
+let printerUp = false;
+
+function scheduleStatus() {
+    clearTimeout(statusTimer);
+    let ms = 10000;
+    if (document.hidden) {
+        ms = 20000;
+    } else if (typeof wifiUi !== "undefined" && wifiUi.isOpen()) {
+        ms = 15000;
+    } else if (!printerUp) {
+        ms = 5000;
+    }
+    statusTimer = setTimeout(() => refreshStatus(), ms);
+}
+
 async function refreshStatus() {
+    if (statusBusy) {
+        return null;
+    }
+    statusBusy = true;
     try {
         const st = await fetchStatus();
-        const bit = st.printer_connected ? "printer connected" : "no printer";
-        setStatus(`${bit} · ${apiBase()}`, st.printer_connected ? "ok" : "");
-        $("print").disabled = !st.printer_connected;
+        printerUp = !!st.printer_connected;
+        const bit = printerUp ? "printer connected" : "no printer";
+        setStatus(`${bit} · ${apiBase()}`, printerUp ? "ok" : "");
+        $("print").disabled = !printerUp;
         return st;
     } catch (err) {
+        printerUp = false;
         setStatus(`API unreachable (${apiBase()})`, "err");
         $("print").disabled = true;
         return null;
+    } finally {
+        statusBusy = false;
+        scheduleStatus();
     }
 }
+
+document.addEventListener("visibilitychange", () => {
+    scheduleStatus();
+});
 
 $("print").addEventListener("click", async () => {
     $("print").disabled = true;
@@ -464,7 +582,6 @@ async function boot() {
         /* fallback page */
     }
     await refreshStatus();
-    setInterval(refreshStatus, 4000);
     layoutGuides();
     new ResizeObserver(() => layoutGuides()).observe($("stage-wrap"));
     window.addEventListener("resize", () => layoutGuides());

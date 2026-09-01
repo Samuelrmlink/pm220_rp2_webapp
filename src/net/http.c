@@ -86,6 +86,7 @@ static err_t http_reply(struct tcp_pcb *tpcb, int code, const char *ctype, const
                       "HTTP/1.1 %d %s\r\n"
                       "Content-Type: %s\r\n"
                       "Content-Length: %u\r\n"
+                      "Cache-Control: no-store\r\n"
                       "Access-Control-Allow-Origin: *\r\n"
                       "Access-Control-Allow-Methods: %s\r\n"
                       "Access-Control-Allow-Headers: Content-Type\r\n"
