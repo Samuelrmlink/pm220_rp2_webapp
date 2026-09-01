@@ -64,8 +64,16 @@ The board runs a Classic inquiry every 15 s until it finds a printer-like device
 
 ```
 GET  /api/status
-GET  /api/scan
+GET  /api/scan                      Bluetooth inquiry (not Wi-Fi)
 POST /api/scan
+GET  /api/wifi                      AP/STA status, mDNS name, scan policy
+PUT  /api/wifi                      {"scan":"idle"|"always"|"never","mdns","ap_ssid","ap_password"}
+GET  /api/wifi/scan
+POST /api/wifi/scan                 start a Wi-Fi scan (briefly disturbs AP clients)
+GET  /api/wifi/networks             known SSIDs (no passwords)
+POST /api/wifi/connect              {"ssid","password"?} save + join STA
+DELETE /api/wifi/networks           {"ssid"}
+POST /api/wifi/ap                   leave STA, start SoftAP
 GET  /api/printer
 GET  /api/media                    label + framebuffer contract
 GET  /api/print                    same as /api/media
@@ -83,6 +91,19 @@ GET  /                             index.html from LittleFS when present
 ```
 
 On the Plus 2 W, the USER button also fires the test frame while SPP is up.
+
+Wi-Fi: boot tries known networks in `settings/known_networks.json` for 60 s, then SoftAP `PM220-Pico` / `pm220pico` at `192.168.4.1`. A join attempt times out after **6 s** (association); if the radio already associated, DHCP gets **8 s** more. If the STA link drops for **2 s**, the board leaves STA, returns to SoftAP, and immediately scans for known networks when the `scan` policy allows (`idle` = no AP clients, `always`, not `never`). After that, AP-mode scans for known networks run every **30 s** (plus a 10 s backoff after a failed join). Successful STA join turns the SoftAP off; `http://pm220.local/` (or the configured mDNS name) is advertised on AP, STA, and USB NCM. Periodic scans while in AP mode default to **`idle`**. A scan hops the radio off-channel and can hitch or drop AP clients; `always` enables that, `never` is API-only.
+
+```bash
+python3 tools/wifi.py status
+python3 tools/wifi.py scan
+python3 tools/wifi.py known
+python3 tools/wifi.py connect 'HomeSSID' --password 'secret'
+python3 tools/wifi.py delete HomeSSID
+python3 tools/wifi.py scan-mode idle    # idle | always | never
+python3 tools/wifi.py ap                # force SoftAP
+python3 tools/wifi.py --base http://192.168.4.1 status
+```
 
 ## Label editor
 

@@ -9,6 +9,7 @@
 #define FS_FILE_MAX (128u * 1024u)
 #define FS_READS 2
 #define FS_LABELS_DIR "labels"
+#define FS_SETTINGS_DIR "settings"
 
 bool fs_init(void);
 bool fs_valid_name(const char *name);

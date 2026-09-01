@@ -34,6 +34,7 @@ add_executable(pm220
     src/net/dhcpserver.c
     src/net/http.c
     src/net/mdns.c
+    src/net/wifi.c
     src/bt/bt_core.c
     src/printer/tspl.c
     src/printer/job.c
@@ -70,6 +71,7 @@ target_compile_definitions(pm220 PRIVATE
     PICO_USB_RESET_MS_OS_20_DESCRIPTOR_ITF=4
     LFS_NO_DEBUG=1
     LFS_NAME_MAX=64
+    CYW43_HOST_NAME=\"pm220\"
 )
 
 pico_enable_stdio_usb(pm220 1)

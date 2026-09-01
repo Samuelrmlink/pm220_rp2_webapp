@@ -11,6 +11,7 @@
 #include "printer/job.h"
 #include "printer/tspl.h"
 #include "fs/fs.h"
+#include "net/wifi.h"
 
 #define HTTP_HDR 1024
 #define HTTP_CONNS 2
@@ -409,6 +410,93 @@ static int dispatch(struct tcp_pcb *tpcb, http_conn_t *c, const char *method, co
         bt_status_json(json_buf, sizeof(json_buf));
         return http_reply(tpcb, 200, "application/json", json_buf);
     }
+    if (path_is(path, "/api/wifi") && strcmp(method, "GET") == 0) {
+        wifi_status_json(json_buf, sizeof(json_buf));
+        return http_reply(tpcb, 200, "application/json", json_buf);
+    }
+    if (path_is(path, "/api/wifi") && strcmp(method, "PUT") == 0) {
+        char tmp[64];
+        bool any = false;
+        if (json_str_field(body, "scan", tmp, sizeof(tmp))) {
+            if (wifi_set_scan_policy(tmp) < 0) {
+                return http_reply(tpcb, 400, "application/json",
+                                  "{\"ok\":false,\"error\":\"bad scan policy\"}");
+            }
+            any = true;
+        }
+        if (json_str_field(body, "mdns", tmp, sizeof(tmp))) {
+            if (wifi_set_mdns(tmp) < 0) {
+                return http_reply(tpcb, 400, "application/json",
+                                  "{\"ok\":false,\"error\":\"bad mdns name\"}");
+            }
+            any = true;
+        }
+        char ssid[33] = {0};
+        char pass[64];
+        int have_ssid = json_str_field(body, "ap_ssid", ssid, sizeof(ssid));
+        int have_pass = json_str_field(body, "ap_password", pass, sizeof(pass));
+        if (have_ssid || have_pass) {
+            if (wifi_set_ap_creds(have_ssid ? ssid : NULL, have_pass ? pass : NULL) < 0) {
+                return http_reply(tpcb, 400, "application/json",
+                                  "{\"ok\":false,\"error\":\"bad AP credentials\"}");
+            }
+            any = true;
+        }
+        if (!any) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"no fields\"}");
+        }
+        wifi_status_json(json_buf, sizeof(json_buf));
+        return http_reply(tpcb, 200, "application/json", json_buf);
+    }
+    if (path_is(path, "/api/wifi/scan") && strcmp(method, "GET") == 0) {
+        wifi_scan_json(json_buf, sizeof(json_buf));
+        return http_reply(tpcb, 200, "application/json", json_buf);
+    }
+    if (path_is(path, "/api/wifi/scan") && strcmp(method, "POST") == 0) {
+        wifi_request_scan();
+        return http_reply(tpcb, 202, "application/json", "{\"ok\":true,\"scanning\":true}");
+    }
+    if (path_is(path, "/api/wifi/networks") && strcmp(method, "GET") == 0) {
+        wifi_networks_json(json_buf, sizeof(json_buf));
+        return http_reply(tpcb, 200, "application/json", json_buf);
+    }
+    if (path_is(path, "/api/wifi/connect") && strcmp(method, "POST") == 0) {
+        char ssid[33];
+        char pass[64] = {0};
+        if (!json_str_field(body, "ssid", ssid, sizeof(ssid))) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"ssid required\"}");
+        }
+        json_str_field(body, "password", pass, sizeof(pass));
+        int err = wifi_connect_save(ssid, pass);
+        if (err == -2) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"too many networks\"}");
+        }
+        if (err) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"bad ssid\"}");
+        }
+        return http_reply(tpcb, 202, "application/json",
+                          "{\"ok\":true,\"saved\":true,\"connecting\":true}");
+    }
+    if (path_is(path, "/api/wifi/networks") && strcmp(method, "DELETE") == 0) {
+        char ssid[33];
+        if (!json_str_field(body, "ssid", ssid, sizeof(ssid))) {
+            return http_reply(tpcb, 400, "application/json",
+                              "{\"ok\":false,\"error\":\"ssid required\"}");
+        }
+        if (wifi_delete_network(ssid) < 0) {
+            return http_reply(tpcb, 404, "application/json",
+                              "{\"ok\":false,\"error\":\"not found\"}");
+        }
+        return http_reply(tpcb, 200, "application/json", "{\"ok\":true}");
+    }
+    if (path_is(path, "/api/wifi/ap") && strcmp(method, "POST") == 0) {
+        wifi_force_ap();
+        return http_reply(tpcb, 202, "application/json", "{\"ok\":true,\"mode\":\"ap\"}");
+    }
     if (path_is(path, "/api/scan") && strcmp(method, "GET") == 0) {
         bt_scan_json(json_buf, sizeof(json_buf));
         return http_reply(tpcb, 200, "application/json", json_buf);
@@ -571,7 +659,7 @@ static int dispatch(struct tcp_pcb *tpcb, http_conn_t *c, const char *method, co
         if (path_is(path, "/") || path_is(path, "/index.html")) {
             return http_reply(tpcb, 200, "text/plain",
                               "pm220-pico2w\nhttp://pm220.local/\n"
-                              "GET /api/status /api/scan /api/printer /api/media /api/print /api/fs\n"
+                              "GET /api/status /api/scan /api/wifi /api/printer /api/media /api/print /api/fs\n"
                               "PUT /api/fs/<name>  DELETE /api/fs/<name>\n"
                               "POST /api/scan /api/printer/connect /api/printer/disconnect\n"
                               "POST /api/print  application/octet-stream, packed 1-bit 48 bytes/row\n"
@@ -645,8 +733,9 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         bool want_bitmap = path_is(path, "/api/print") && strcmp(method, "POST") == 0 &&
                            !path_is(path, "/api/print/test");
         bool want_fs_put = strcmp(method, "PUT") == 0 && strncmp(path, "/api/fs/", 8) == 0;
-        bool want_post_body = strcmp(method, "POST") == 0 && c->content_len > 0 &&
-                              !want_bitmap;
+        bool want_post_body = c->content_len > 0 && !want_bitmap && !want_fs_put &&
+                              (strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 ||
+                               strcmp(method, "DELETE") == 0);
         if (want_bitmap) {
             if (c->content_len == 0 || c->content_len > sizeof(print_bitmap)) {
                 pbuf_free(p);

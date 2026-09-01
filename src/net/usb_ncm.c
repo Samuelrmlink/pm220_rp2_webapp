@@ -71,6 +71,10 @@ void usb_ncm_ensure_mac(void) {
     memcpy(&tud_network_mac_address[1], id.id + 3, 5);
 }
 
+struct netif *usb_ncm_netif(void) {
+    return &ncm_netif;
+}
+
 void usb_ncm_init(void) {
     usb_ncm_ensure_mac();
     ip4_addr_t ip, mask, gw;

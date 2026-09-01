@@ -124,10 +124,15 @@ bool fs_valid_path(const char *path) {
         return false;
     }
     size_t dlen = (size_t)(slash - path);
-    if (dlen != strlen(FS_LABELS_DIR) || strncmp(path, FS_LABELS_DIR, dlen) != 0) {
+    if (!((dlen == strlen(FS_LABELS_DIR) && strncmp(path, FS_LABELS_DIR, dlen) == 0) ||
+          (dlen == strlen(FS_SETTINGS_DIR) && strncmp(path, FS_SETTINGS_DIR, dlen) == 0))) {
         return false;
     }
     return fs_valid_name(slash + 1);
+}
+
+static bool is_managed_dir(const char *path) {
+    return path && (strcmp(path, FS_LABELS_DIR) == 0 || strcmp(path, FS_SETTINGS_DIR) == 0);
 }
 
 bool fs_is_dir(const char *path) {
@@ -137,11 +142,11 @@ bool fs_is_dir(const char *path) {
     if (!path || !path[0] || strcmp(path, "/") == 0) {
         return true;
     }
-    if (strcmp(path, FS_LABELS_DIR) != 0) {
+    if (!is_managed_dir(path)) {
         return false;
     }
     struct lfs_info info;
-    return lfs_stat(&lfs, FS_LABELS_DIR, &info) >= 0 && info.type == LFS_TYPE_DIR;
+    return lfs_stat(&lfs, path, &info) >= 0 && info.type == LFS_TYPE_DIR;
 }
 
 static void cfg_init(void) {
@@ -182,6 +187,10 @@ bool fs_init(void) {
     err = lfs_mkdir(&lfs, FS_LABELS_DIR);
     if (err && err != LFS_ERR_EXIST) {
         printf("fs: mkdir %s %d\n", FS_LABELS_DIR, err);
+    }
+    err = lfs_mkdir(&lfs, FS_SETTINGS_DIR);
+    if (err && err != LFS_ERR_EXIST) {
+        printf("fs: mkdir %s %d\n", FS_SETTINGS_DIR, err);
     }
     printf("fs: mounted 1MB at flash 0x%lx\n", (unsigned long)FS_FLASH_OFF);
     return true;
