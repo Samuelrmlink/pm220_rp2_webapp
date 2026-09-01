@@ -14,8 +14,10 @@
 #include "net/wifi.h"
 
 #define HTTP_HDR 1024
-#define HTTP_CONNS 2
-#define FILE_CHUNK 1024
+#define HTTP_CONNS 8
+#define FILE_CHUNK 1460
+#define HTTP_POLL_INT 2
+#define HTTP_MAX_RETRIES 20
 
 static char json_buf[4096];
 static uint8_t print_bitmap[TSPL_BITMAP_MAX];
@@ -39,6 +41,10 @@ typedef struct {
     char post_body[256];
     int file_h;
     size_t file_left;
+    bool closing;
+    bool pending_file;
+    bool pending_gzip;
+    uint8_t retries;
 } http_conn_t;
 
 static http_conn_t conns[HTTP_CONNS];
@@ -125,6 +131,10 @@ static void conn_cleanup(http_conn_t *c) {
 static void conn_reset(http_conn_t *c) {
     memset(c, 0, sizeof(*c));
     c->file_h = -1;
+}
+
+static bool conn_held(const http_conn_t *c) {
+    return c->sending_file || c->closing || c->pending_file;
 }
 
 static void conn_drop(struct tcp_pcb *tpcb) {
@@ -341,7 +351,23 @@ static const char *mime_of(const char *name) {
     return "application/octet-stream";
 }
 
-static bool http_pump_file(http_conn_t *c, struct tcp_pcb *tpcb) {
+static err_t http_start_file(http_conn_t *c, struct tcp_pcb *tpcb, const char *name, bool gzipped);
+static void http_kick_pending(void);
+
+static void http_try_close(http_conn_t *c, struct tcp_pcb *tpcb) {
+    if (c->sending_file) {
+        fs_end_read(c->file_h);
+        c->sending_file = false;
+        c->file_h = -1;
+    }
+    c->closing = true;
+    if (tcp_close(tpcb) == ERR_OK) {
+        conn_reset(c);
+    }
+}
+
+/* 1 = all bytes queued, 0 = wait for sent/poll, -1 = abort. */
+static int http_pump_file(http_conn_t *c, struct tcp_pcb *tpcb) {
     while (c->file_left) {
         u16_t room = tcp_sndbuf(tpcb);
         if (room < 32) {
@@ -356,29 +382,50 @@ static bool http_pump_file(http_conn_t *c, struct tcp_pcb *tpcb) {
         }
         int n = fs_read(c->file_h, file_chunk, want);
         if (n <= 0) {
-            c->file_left = 0;
-            break;
+            return -1;
         }
         if (tcp_write(tpcb, file_chunk, (u16_t)n, TCP_WRITE_FLAG_COPY) != ERR_OK) {
+            if (fs_rewind(c->file_h, (size_t)n) < 0) {
+                return -1;
+            }
             break;
         }
         c->file_left -= (size_t)n;
+        c->retries = 0;
     }
     tcp_output(tpcb);
-    if (c->file_left != 0) {
-        return false;
+    return c->file_left == 0 ? 1 : 0;
+}
+
+static err_t http_finish_file(http_conn_t *c, struct tcp_pcb *tpcb, int rc) {
+    if (rc < 0) {
+        conn_cleanup(c);
+        conn_reset(c);
+        tcp_abort(tpcb);
+        http_kick_pending();
+        return ERR_ABRT;
     }
-    fs_end_read(c->file_h);
+    if (rc > 0) {
+        http_try_close(c, tpcb);
+        http_kick_pending();
+    }
+    return ERR_OK;
+}
+
+static void http_park_file(http_conn_t *c, const char *name, bool gzipped) {
+    snprintf(c->fs_name, sizeof(c->fs_name), "%s", name);
+    c->pending_file = true;
+    c->pending_gzip = gzipped;
     c->sending_file = false;
-    tcp_close(tpcb);
-    return true;
+    c->file_h = -1;
 }
 
 static err_t http_start_file(http_conn_t *c, struct tcp_pcb *tpcb, const char *name, bool gzipped) {
     size_t sz = 0;
     int h = fs_begin_read(name, &sz);
     if (h < 0) {
-        return http_reply(tpcb, 409, "application/json", "{\"ok\":false,\"error\":\"busy\"}\n");
+        http_park_file(c, name, gzipped);
+        return ERR_OK;
     }
     char hdr[400];
     int hl = snprintf(hdr, sizeof(hdr),
@@ -394,12 +441,29 @@ static err_t http_start_file(http_conn_t *c, struct tcp_pcb *tpcb, const char *n
                       mime_of(name), (unsigned)sz,
                       gzipped ? "Content-Encoding: gzip\r\n" : "",
                       cors_methods());
-    tcp_write(tpcb, hdr, (uint16_t)hl, TCP_WRITE_FLAG_COPY);
+    if (tcp_write(tpcb, hdr, (uint16_t)hl, TCP_WRITE_FLAG_COPY) != ERR_OK) {
+        fs_end_read(h);
+        http_park_file(c, name, gzipped);
+        return ERR_OK;
+    }
+    c->pending_file = false;
     c->sending_file = true;
     c->file_h = h;
     c->file_left = sz;
-    http_pump_file(c, tpcb);
-    return ERR_OK;
+    c->retries = 0;
+    return http_finish_file(c, tpcb, http_pump_file(c, tpcb));
+}
+
+static void http_kick_pending(void) {
+    for (int i = 0; i < HTTP_CONNS; i++) {
+        http_conn_t *c = &conns[i];
+        if (c->pcb && c->pending_file) {
+            http_start_file(c, c->pcb, c->fs_name, c->pending_gzip);
+            if (!c->pending_file) {
+                break;
+            }
+        }
+    }
 }
 
 static int dispatch(struct tcp_pcb *tpcb, http_conn_t *c, const char *method, const char *path,
@@ -716,9 +780,44 @@ static err_t http_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     (void)arg;
     (void)len;
     http_conn_t *c = conn_find(tpcb);
-    if (c && c->sending_file && http_pump_file(c, tpcb)) {
-        conn_drop(tpcb);
+    if (!c) {
+        return ERR_OK;
     }
+    if (c->closing) {
+        http_try_close(c, tpcb);
+        return ERR_OK;
+    }
+    if (c->sending_file) {
+        return http_finish_file(c, tpcb, http_pump_file(c, tpcb));
+    }
+    return ERR_OK;
+}
+
+static err_t http_poll(void *arg, struct tcp_pcb *tpcb) {
+    (void)arg;
+    http_conn_t *c = conn_find(tpcb);
+    if (!c) {
+        return ERR_OK;
+    }
+    if (!conn_held(c)) {
+        return ERR_OK;
+    }
+    if (c->retries < 255) {
+        c->retries++;
+    }
+    if (c->retries > HTTP_MAX_RETRIES) {
+        conn_cleanup(c);
+        conn_reset(c);
+        tcp_abort(tpcb);
+        return ERR_ABRT;
+    }
+    if (c->pending_file) {
+        return http_start_file(c, tpcb, c->fs_name, c->pending_gzip);
+    }
+    if (c->sending_file) {
+        return http_finish_file(c, tpcb, http_pump_file(c, tpcb));
+    }
+    http_try_close(c, tpcb);
     return ERR_OK;
 }
 
@@ -812,12 +911,15 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
             c->body_got = 0;
         } else {
             const char *body = split + 4;
-            dispatch(tpcb, c, method, path, body, strlen(body));
+            err_t derr = dispatch(tpcb, c, method, path, body, strlen(body));
             pbuf_free(p);
-            if (!c->sending_file) {
+            if (derr == ERR_ABRT) {
+                return ERR_ABRT;
+            }
+            if (!conn_held(c)) {
                 conn_drop(tpcb);
             }
-            return ERR_OK;
+            return derr;
         }
     }
 
@@ -901,8 +1003,11 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         if (c->body_got >= c->content_len) {
             c->post_body[c->content_len] = 0;
             c->taking_post_body = false;
-            dispatch(tpcb, c, c->method, c->path, c->post_body, c->content_len);
-            if (!c->sending_file) {
+            err_t derr = dispatch(tpcb, c, c->method, c->path, c->post_body, c->content_len);
+            if (derr == ERR_ABRT) {
+                return ERR_ABRT;
+            }
+            if (!conn_held(c)) {
                 conn_drop(tpcb);
             }
         }
@@ -923,8 +1028,10 @@ static err_t http_accept(void *arg, struct tcp_pcb *newpcb, err_t err) {
     (void)arg;
     (void)err;
     tcp_arg(newpcb, newpcb);
+    tcp_nagle_disable(newpcb);
     tcp_recv(newpcb, http_recv);
     tcp_sent(newpcb, http_sent);
+    tcp_poll(newpcb, http_poll, HTTP_POLL_INT);
     tcp_err(newpcb, http_err);
     return ERR_OK;
 }

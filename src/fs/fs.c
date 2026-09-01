@@ -360,6 +360,20 @@ int fs_read(int h, uint8_t *buf, size_t cap) {
     return (int)lfs_file_read(&lfs, &rfiles[h], buf, cap);
 }
 
+int fs_rewind(int h, size_t n) {
+    if (h < 0 || h >= FS_READS || !ropen[h]) {
+        return -1;
+    }
+    lfs_soff_t pos = lfs_file_tell(&lfs, &rfiles[h]);
+    if (pos < 0 || (lfs_soff_t)n > pos) {
+        return -1;
+    }
+    if (lfs_file_seek(&lfs, &rfiles[h], pos - (lfs_soff_t)n, LFS_SEEK_SET) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
 void fs_end_read(int h) {
     if (h < 0 || h >= FS_READS || !ropen[h]) {
         return;

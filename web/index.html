@@ -129,25 +129,29 @@
             </div>
         </div>
         <aside id="props">
-            <div class="pane-head">
-                <h2 id="pane-title">Add object</h2>
-                <button type="button" id="pane-close" hidden aria-label="Close">X</button>
-            </div>
             <div id="add-pane">
-                <p class="empty">Select an object on the label, or add one:</p>
-                <button type="button" id="add-text">Text box</button>
-                <button type="button" id="add-image">Image</button>
-                <button type="button" id="add-qr">QR code</button>
-                <button type="button" id="add-barcode">1D barcode</button>
                 <div class="obj-nav">
-                    <h3 class="obj-nav-title">Select Object</h3>
-                    <button type="button" id="obj-next">Next Object</button>
-                    <button type="button" id="obj-prev">Previous Object</button>
-                    <button type="button" id="obj-select">Select Object</button>
-                    <p class="kbd-hints">Keyboard hints:<br>
-                    n — Next Object<br>
-                    N — Previous Object<br>
-                    Space — Select Object</p>
+                    <h2 class="obj-nav-title">Select Object</h2>
+                    <p class="empty">Select object from label.</p>
+                    <div class="obj-nav-btns">
+                        <button type="button" id="obj-next">Next</button>
+                        <button type="button" id="obj-prev">Previous</button>
+                        <button type="button" id="obj-select">Select</button>
+                    </div>
+                    <div class="kbd-hints">
+                        <p class="kbd-hints-title">Keyboard hints:</p>
+                        <p>n — Next</p>
+                        <p>N — Previous</p>
+                        <p>Space — Select</p>
+                    </div>
+                </div>
+                <h2 class="obj-nav-title">Add object</h2>
+                <p class="empty">Select an object on the label, or add one:</p>
+                <div class="add-btns">
+                    <button type="button" id="add-text">Text box</button>
+                    <button type="button" id="add-image">Image</button>
+                    <button type="button" id="add-qr">QR code</button>
+                    <button type="button" id="add-barcode">1D barcode</button>
                 </div>
             </div>
             <div id="warn" hidden>

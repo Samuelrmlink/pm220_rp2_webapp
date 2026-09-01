@@ -7,7 +7,7 @@
 
 #define FS_NAME_MAX 64
 #define FS_FILE_MAX (128u * 1024u)
-#define FS_READS 2
+#define FS_READS 8
 #define FS_LABELS_DIR "labels"
 #define FS_SETTINGS_DIR "settings"
 
@@ -28,6 +28,7 @@ void fs_abort_write(void);
 
 int fs_begin_read(const char *name, size_t *size);
 int fs_read(int h, uint8_t *buf, size_t cap);
+int fs_rewind(int h, size_t n);
 void fs_end_read(int h);
 
 #endif

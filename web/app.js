@@ -253,21 +253,12 @@ function payloadEl(box) {
 }
 
 function focusPayload(box) {
-    const el = payloadEl(box);
-    if (!el) {
-        if (box) {
-            setTimeout(() => $("nudge-pad").focus(), 0);
-        }
+    if (!box) {
         return;
     }
     setTimeout(() => {
-        el.focus();
-        if (box.pristine) {
-            el.select();
-        } else {
-            const n = el.value.length;
-            el.setSelectionRange(n, n);
-        }
+        $("nudge-pad").focus();
+        markNudgeFocus();
     }, 0);
 }
 
@@ -336,10 +327,10 @@ function editorTabOrder(box) {
         rest.push(el);
     }
     const order = [];
+    order.push(pad);
     if (pay) {
         order.push(pay);
     }
-    order.push(pad);
     order.push(...rest);
     return order;
 }
@@ -384,6 +375,7 @@ function fillForm() {
     const box = editor.selected();
     $("add-pane").hidden = !!box;
     $("editor-pane").hidden = !box;
+    $("pane-head").hidden = !box;
     $("pane-close").hidden = !box;
     $("del").disabled = !box;
     $("pane-title").textContent = box ? (TITLES[box.type] || box.type) : "Add object";
@@ -848,6 +840,8 @@ function scheduleStatus() {
     let ms = 10000;
     if (document.hidden) {
         ms = 20000;
+    } else if (typeof picker !== "undefined" && picker.isOpen()) {
+        ms = 30000;
     } else if (typeof wifiUi !== "undefined" && wifiUi.isOpen()) {
         ms = 15000;
     } else if (!printerUp) {
@@ -906,6 +900,7 @@ async function boot() {
     syncAdvanced();
     layoutGuides();
     restore();
+    refreshStatus();
     try {
         const media = await fetchMedia();
         page = {
@@ -927,7 +922,6 @@ async function boot() {
     } catch {
         /* fallback page */
     }
-    await refreshStatus();
     layoutGuides();
     new ResizeObserver(() => layoutGuides()).observe($("stage-wrap"));
     window.addEventListener("resize", () => layoutGuides());

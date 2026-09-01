@@ -164,10 +164,7 @@ main {
 }
 
 .obj-nav {
-    margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    margin: 0 0 16px;
 }
 
 .obj-nav-title {
@@ -175,22 +172,36 @@ main {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--muted);
-    margin: 0 0 4px;
+    margin: 0 0 8px;
     font-weight: 600;
 }
 
-.obj-nav button {
-    width: 100%;
-    text-align: left;
+.obj-nav-btns,
+.add-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.obj-nav-btns {
+    flex-wrap: nowrap;
 }
 
 .kbd-hints {
     display: none;
     margin: 8px 0 0;
-    font-size: 11px;
-    line-height: 1.45;
     color: var(--muted);
-    white-space: pre-line;
+}
+
+.kbd-hints-title {
+    margin: 0 0 2px;
+    font-size: 13px;
+}
+
+.kbd-hints p {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.2;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -354,11 +365,12 @@ aside .empty {
     margin: 0 0 12px;
 }
 
-#add-pane button {
-    display: block;
-    width: 100%;
-    margin: 0 0 8px;
-    text-align: left;
+#add-pane .obj-nav-btns button,
+#add-pane .add-btns button {
+    flex: 1 1 auto;
+    margin: 0;
+    text-align: center;
+    padding: 4px 8px;
 }
 
 #del {
