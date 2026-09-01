@@ -267,6 +267,49 @@ aside .coords input {
     font-size: 11px;
 }
 
+.num-spin {
+    display: inline-flex;
+    align-items: stretch;
+    max-width: 100%;
+}
+
+aside .coords .num-spin {
+    display: flex;
+    width: 100%;
+}
+
+aside .coords .num-spin input {
+    flex: 1;
+}
+
+.num-spin-btns {
+    display: none;
+    flex-direction: column;
+    border: 1px solid #555;
+    border-left: none;
+    border-radius: 0 3px 3px 0;
+    overflow: hidden;
+}
+
+.num-spin-btns button {
+    flex: 1;
+    padding: 0 5px;
+    font-size: 9px;
+    line-height: 1;
+    min-height: 13px;
+    border: none;
+    border-radius: 0;
+    background: #3a3a3a;
+}
+
+.num-spin-btns button + button {
+    border-top: 1px solid #555;
+}
+
+.num-spin-btns button:hover {
+    background: #4a4a4a;
+}
+
 aside .empty {
     color: var(--muted);
     margin: 0 0 12px;
@@ -404,11 +447,29 @@ aside .empty {
         width: 4.25em;
         font-size: 12px;
         padding: 2px 4px;
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
     }
     aside .coords input {
         width: 100%;
         font-size: 11px;
         padding: 1px 2px;
+    }
+    .num-spin-btns {
+        display: flex;
+    }
+    aside .coords .num-spin input {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+}
+
+@media (pointer: coarse) {
+    .num-spin-btns { display: flex; }
+    aside input[inputmode="numeric"],
+    aside .coords .num-spin input {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
     }
 }
 

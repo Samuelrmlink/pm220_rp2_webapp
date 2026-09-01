@@ -103,6 +103,51 @@ function parseIntField(id) {
     return Number.isFinite(n) ? n : null;
 }
 
+function isNumField(el) {
+    return el && el.tagName === "INPUT" && el.getAttribute("inputmode") === "numeric";
+}
+
+function numBounds(el) {
+    switch (el.id) {
+        case "size":
+            return [4, 240];
+        case "bc-font":
+            return [4, 72];
+        case "bc-off":
+            return [-240, 240];
+        case "ox":
+            return [0, page.width_dots];
+        case "oy":
+            return [0, page.height_dots];
+        case "ow":
+            return [8, page.width_dots];
+        case "oh":
+            return [8, page.height_dots];
+        default:
+            return [null, null];
+    }
+}
+
+function stepNumField(el, delta) {
+    if (!el || el.disabled || !isNumField(el)) {
+        return;
+    }
+    let n = parseIntField(el.id);
+    if (n == null) {
+        n = 0;
+    }
+    n += delta;
+    const [lo, hi] = numBounds(el);
+    if (lo != null && n < lo) {
+        n = lo;
+    }
+    if (hi != null && n > hi) {
+        n = hi;
+    }
+    el.value = String(n);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 const preview = $("preview");
 const pctx = preview.getContext("2d", { willReadFrequently: true });
 pctx.imageSmoothingEnabled = false;
@@ -591,6 +636,24 @@ document.addEventListener("keydown", (e) => {
         return;
     }
     if (inField) {
+        if (isNumField(e.target) && !e.target.disabled) {
+            const step = e.shiftKey ? 8 : 1;
+            let d = 0;
+            if (e.key === "ArrowUp" || e.key === "k") {
+                d = step;
+            } else if (e.key === "ArrowDown" || e.key === "j") {
+                d = -step;
+            } else if (e.key === "K") {
+                d = 8;
+            } else if (e.key === "J") {
+                d = -8;
+            }
+            if (d) {
+                e.preventDefault();
+                stepNumField(e.target, d);
+                return;
+            }
+        }
         if (e.key === "Escape") {
             e.target.blur();
             editor.select(null);
@@ -665,6 +728,65 @@ $("nudge-pad").addEventListener("focusout", () => setTimeout(markNudgeFocus, 0))
     $("nudge-pad").addEventListener("pointercancel", stopHold);
     $("nudge-pad").addEventListener("lostpointercapture", stopHold);
 }
+
+function wrapNumSpins() {
+    for (const el of document.querySelectorAll("aside input[inputmode='numeric']")) {
+        if (el.parentElement && el.parentElement.classList.contains("num-spin")) {
+            continue;
+        }
+        const wrap = document.createElement("div");
+        wrap.className = "num-spin";
+        el.replaceWith(wrap);
+        wrap.appendChild(el);
+        const col = document.createElement("div");
+        col.className = "num-spin-btns";
+        const up = document.createElement("button");
+        up.type = "button";
+        up.tabIndex = -1;
+        up.className = "num-spin-up";
+        up.setAttribute("aria-label", "Increase");
+        up.textContent = "▲";
+        const down = document.createElement("button");
+        down.type = "button";
+        down.tabIndex = -1;
+        down.className = "num-spin-down";
+        down.setAttribute("aria-label", "Decrease");
+        down.textContent = "▼";
+        col.append(up, down);
+        wrap.appendChild(col);
+    }
+    let holdWait = 0;
+    let holdRep = 0;
+    const stopHold = () => {
+        clearTimeout(holdWait);
+        clearInterval(holdRep);
+        holdWait = 0;
+        holdRep = 0;
+    };
+    document.querySelector("aside").addEventListener("pointerdown", (e) => {
+        const btn = e.target.closest(".num-spin-btns button");
+        if (!btn) {
+            return;
+        }
+        const input = btn.closest(".num-spin").querySelector("input");
+        if (!input || input.disabled) {
+            return;
+        }
+        e.preventDefault();
+        const delta = btn.classList.contains("num-spin-up") ? 1 : -1;
+        stepNumField(input, delta);
+        stopHold();
+        holdWait = setTimeout(() => {
+            holdRep = setInterval(() => stepNumField(input, delta), 50);
+        }, 300);
+        btn.setPointerCapture?.(e.pointerId);
+    });
+    document.querySelector("aside").addEventListener("pointerup", stopHold);
+    document.querySelector("aside").addEventListener("pointercancel", stopHold);
+    document.querySelector("aside").addEventListener("lostpointercapture", stopHold);
+}
+
+wrapNumSpins();
 
 function setStatus(msg, kind) {
     const el = $("status");
