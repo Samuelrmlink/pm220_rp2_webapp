@@ -1,5 +1,7 @@
 # pm220-pico2w
 
+This project was developed with assistance from **Grok Build** (xAI), using the **Grok 4.6** model.
+
 Nelko PM220 dongle firmware. Bluetooth Classic SPP to the printer, HTTP API + tiny web UI, no PC app.
 
 **Development board:** Pimoroni Pico Plus 2 W (`pimoroni_pico_plus2_w_rp2350`, RP2350B, 16 MB flash, 8 MB PSRAM, CYW43439).
@@ -196,3 +198,13 @@ PY
 ```
 
 Over the phone AP, use `http://192.168.4.1/api/print` instead. `http://pm220.local/api/print` works when mDNS resolves.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+Vendored third-party code keeps its own license in-tree:
+
+- littlefs — BSD-3-Clause (`src/fs/littlefs/`)
+- Project Nayuki qrcodegen — MIT (`web/qrcodegen.js`)
+

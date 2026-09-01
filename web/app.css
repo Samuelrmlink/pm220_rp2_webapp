@@ -59,6 +59,12 @@ button, select, input, textarea {
     padding: 4px 8px;
 }
 
+button, select {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
 button:hover { background: #4a4a4a; }
 button.primary { background: #245a9a; border-color: #4aa3ff; }
 button.primary:hover { background: #2d6cb8; }
@@ -232,6 +238,16 @@ aside {
     touch-action: pan-y;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+aside input,
+aside textarea {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
 }
 
 .pane-head {
@@ -339,6 +355,9 @@ aside .coords .num-spin input {
     border-left: none;
     border-radius: 0 3px 3px 0;
     overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .num-spin-btns button {
@@ -396,6 +415,9 @@ aside .empty {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--muted);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .dpad {
@@ -411,6 +433,10 @@ aside .empty {
     touch-action: manipulation;
     justify-content: start;
     outline: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
 }
 
 .dpad-sm {
@@ -432,6 +458,10 @@ aside .empty {
     font-size: 18px;
     line-height: 1;
     touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
 }
 
 .dpad-sm .nudge-btn { font-size: 15px; }
