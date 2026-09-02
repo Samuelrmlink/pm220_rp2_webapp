@@ -582,7 +582,7 @@ void wifi_poll(void) {
         dirty_config = false;
         persist_config();
     }
-    if (pending_ap && !bt_hold) {
+    if (pending_ap && !bt_hold && !bt_is_connecting() && !bt_is_scanning()) {
         pending_ap = false;
         pending_join = false;
         start_ap();
@@ -696,6 +696,8 @@ void wifi_status_json(char *buf, size_t cap) {
         mode = "sta";
     } else if (state == ST_JOIN || state == ST_BOOT) {
         mode = connecting ? "connecting" : "down";
+    } else if (!ap_up) {
+        mode = bt_hold ? "paused" : "down";
     }
     char ip[16] = "";
     if (state == ST_STA) {

@@ -153,7 +153,8 @@ static bool is_auth_status(uint8_t status) {
     return status == ERROR_CODE_AUTHENTICATION_FAILURE ||
            status == ERROR_CODE_PIN_OR_KEY_MISSING ||
            status == ERROR_CODE_CONNECTION_REJECTED_DUE_TO_SECURITY_REASONS ||
-           status == L2CAP_CONNECTION_PIN_OR_LINK_KEY_MISSING;
+           status == L2CAP_CONNECTION_PIN_OR_LINK_KEY_MISSING ||
+           status == L2CAP_CONNECTION_RESPONSE_RESULT_REFUSED_SECURITY;
 }
 
 static const char *hci_status_name(uint8_t status) {
@@ -178,6 +179,12 @@ static const char *hci_status_name(uint8_t status) {
             return "rejected (security)";
         case L2CAP_CONNECTION_PIN_OR_LINK_KEY_MISSING:
             return "link key missing";
+        case L2CAP_CONNECTION_RESPONSE_RESULT_REFUSED_SECURITY:
+            return "refused (security)";
+        case L2CAP_CONNECTION_BASEBAND_DISCONNECT:
+            return "baseband disconnect";
+        case BTSTACK_BUSY:
+            return "stack busy";
         default:
             return "";
     }
@@ -199,6 +206,41 @@ static void arm_page_backoff(uint32_t ms) {
     next_page_ms = now_ms() + ms;
 }
 
+static bool will_auto_retry(void) {
+    return peer_set && !inhibit_auto_connect;
+}
+
+static void idle_keep_radio(void) {
+    retry_after_disc = false;
+    auth_retry = false;
+    state = ST_IDLE;
+    /* Keep SoftAP down while we still intend to page. Releasing here lets
+     * wifi_poll start_ap(), then bt_poll immediately stop_ap() for the next
+     * page — that enable/disable thrash shows up as L2CAP 0x6a. */
+    if (!will_auto_retry()) {
+        radio_release();
+    }
+}
+
+static void backoff_and_idle(void) {
+    arm_page_backoff(page_backoff_ms);
+    if (page_backoff_ms < 60000) {
+        page_backoff_ms *= 2;
+        if (page_backoff_ms > 60000) {
+            page_backoff_ms = 60000;
+        }
+    }
+    idle_keep_radio();
+}
+
+static bool is_page_fail(uint8_t status) {
+    return status == ERROR_CODE_PAGE_TIMEOUT ||
+           status == ERROR_CODE_CONNECTION_TIMEOUT ||
+           status == L2CAP_CONNECTION_BASEBAND_DISCONNECT ||
+           status == ERROR_CODE_CONNECTION_FAILED_TO_BE_ESTABLISHED ||
+           status == BTSTACK_BUSY;
+}
+
 static void connect_failed(uint8_t status) {
     char msg[80];
     const char *why = hci_status_name(status);
@@ -209,21 +251,13 @@ static void connect_failed(uint8_t status) {
     }
     set_error(msg);
     rfcomm_cid = 0;
-    if (status == ERROR_CODE_PAGE_TIMEOUT || status == ERROR_CODE_CONNECTION_TIMEOUT) {
-        /* Page timeout is usually radio-busy or the printer not answering — not
-         * a stale link key. Dropping the key here forced a re-pair on every
-         * SoftAP-induced 0x04. */
-        arm_page_backoff(page_backoff_ms);
-        if (page_backoff_ms < 60000) {
-            page_backoff_ms *= 2;
-            if (page_backoff_ms > 60000) {
-                page_backoff_ms = 60000;
-            }
-        }
-        retry_after_disc = false;
-        auth_retry = false;
-        state = ST_IDLE;
-        radio_release();
+    /* SDP found SPP then the ACL died: cheap printers often do this when the
+     * stored link key no longer matches. Treat it like an auth fail once. */
+    if (status == L2CAP_CONNECTION_BASEBAND_DISCONNECT && spp_channel && !auth_retry) {
+        status = L2CAP_CONNECTION_RESPONSE_RESULT_REFUSED_SECURITY;
+    }
+    if (is_page_fail(status) && !is_auth_status(status)) {
+        backoff_and_idle();
         return;
     }
     if (is_auth_status(status) && !auth_retry) {
@@ -238,10 +272,7 @@ static void connect_failed(uint8_t status) {
         open_rfcomm(spp_channel ? spp_channel : SPP_FALLBACK_CHANNEL);
         return;
     }
-    retry_after_disc = false;
-    auth_retry = false;
-    state = ST_IDLE;
-    radio_release();
+    idle_keep_radio();
 }
 
 static void set_error(const char *msg) {
@@ -316,9 +347,7 @@ static void start_sdp_query(void *context) {
         char msg[64];
         snprintf(msg, sizeof(msg), "SDP query start failed 0x%02x", err);
         set_error(msg);
-        state = ST_IDLE;
-        arm_page_backoff(page_backoff_ms);
-        radio_release();
+        backoff_and_idle();
     } else {
         printf("bt: SDP query for SPP on %s\n", bd_addr_to_str(peer_addr));
     }
@@ -338,8 +367,7 @@ static void open_rfcomm(uint8_t channel) {
         char msg[64];
         snprintf(msg, sizeof(msg), "RFCOMM create failed 0x%02x", err);
         set_error(msg);
-        state = ST_IDLE;
-        radio_release();
+        backoff_and_idle();
     }
 }
 
