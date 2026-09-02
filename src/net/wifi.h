@@ -21,4 +21,9 @@ int wifi_set_mdns(const char *name);
 int wifi_set_ap_creds(const char *ssid, const char *password);
 int wifi_force_ap(void);
 
+/* Pause SoftAP and block Wi-Fi scans/joins while Classic BT is paging, inquiring,
+ * or connected. The CYW43439 shares one radio; AP beacons starve paging and
+ * drop an open SPP link. */
+void wifi_bt_radio_hold(bool hold);
+
 #endif

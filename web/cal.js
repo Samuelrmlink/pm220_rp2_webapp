@@ -6,6 +6,7 @@ const PATH = "settings/print.json";
 const ADJ_LIM = 80;
 const MM_LIM = 10;
 const MM_DEFAULT = { offset_x_mm: -1.25, offset_y_mm: 3, gap_mm: 2 };
+const SAFE_DEFAULT = { safe_x0: 32, safe_y0: 32, safe_x1: 351, safe_y1: 207 };
 const DPI = 203;
 const WIDTH_MM = 50;
 const HEIGHT_MM = 30;
@@ -23,6 +24,20 @@ function clampAdj(n) {
     }
     if (n > ADJ_LIM) {
         return ADJ_LIM;
+    }
+    return n;
+}
+
+function clampSafe(n, lo, hi) {
+    if (!Number.isFinite(n)) {
+        return lo;
+    }
+    n = Math.round(n);
+    if (n < lo) {
+        return lo;
+    }
+    if (n > hi) {
+        return hi;
     }
     return n;
 }
@@ -52,6 +67,7 @@ function zeros() {
         offset_x_mm: MM_DEFAULT.offset_x_mm,
         offset_y_mm: MM_DEFAULT.offset_y_mm,
         gap_mm: MM_DEFAULT.gap_mm,
+        ...SAFE_DEFAULT,
     };
 }
 
@@ -63,6 +79,10 @@ function readAdj() {
         offset_x_mm: clampMm(Number($("cal-offx").value)),
         offset_y_mm: clampMm(Number($("cal-offy").value)),
         gap_mm: clampMm(Math.max(0, Number($("cal-gap").value))),
+        safe_x0: clampSafe(Number($("cal-sx0").value), 0, SRC_W - 2),
+        safe_y0: clampSafe(Number($("cal-sy0").value), 0, SRC_H - 2),
+        safe_x1: clampSafe(Number($("cal-sx1").value), 1, SRC_W - 1),
+        safe_y1: clampSafe(Number($("cal-sy1").value), 1, SRC_H - 1),
     };
 }
 
@@ -77,6 +97,10 @@ function fillAdj(data) {
     $("cal-offy").value = String(clampMm(oy == null ? MM_DEFAULT.offset_y_mm : Number(oy)));
     const gap = d.gap_mm;
     $("cal-gap").value = String(clampMm(gap == null ? MM_DEFAULT.gap_mm : Math.max(0, Number(gap))));
+    $("cal-sx0").value = String(d.safe_x0 == null ? SAFE_DEFAULT.safe_x0 : clampSafe(Number(d.safe_x0), 0, SRC_W - 2));
+    $("cal-sy0").value = String(d.safe_y0 == null ? SAFE_DEFAULT.safe_y0 : clampSafe(Number(d.safe_y0), 0, SRC_H - 2));
+    $("cal-sx1").value = String(d.safe_x1 == null ? SAFE_DEFAULT.safe_x1 : clampSafe(Number(d.safe_x1), 1, SRC_W - 1));
+    $("cal-sy1").value = String(d.safe_y1 == null ? SAFE_DEFAULT.safe_y1 : clampSafe(Number(d.safe_y1), 1, SRC_H - 1));
 }
 
 function computeLayout(adj) {
@@ -154,7 +178,8 @@ export function bindCalibrate({ setStatus, applyMedia }) {
         const L = computeLayout(readAdj());
         $("cal-effective").textContent =
             `BITMAP ${L.originX},${L.originY}  ${L.printW}×${L.printH}  ` +
-            `(canvas ${SRC_W}×${SRC_H}, offset ${readAdj().offset_x_mm}/${readAdj().offset_y_mm} mm, gap ${readAdj().gap_mm} mm)`;
+            `(canvas ${SRC_W}×${SRC_H}, offset ${readAdj().offset_x_mm}/${readAdj().offset_y_mm} mm, gap ${readAdj().gap_mm} mm, ` +
+            `safe ${readAdj().safe_x0},${readAdj().safe_y0}–${readAdj().safe_x1},${readAdj().safe_y1})`;
     }
 
     async function loadFile() {

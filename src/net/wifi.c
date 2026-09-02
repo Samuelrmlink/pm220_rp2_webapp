@@ -85,6 +85,8 @@ static uint32_t sta_not_up_since;
 static bool scan_soon;
 static uint32_t last_log;
 static char last_error[48];
+static bool bt_hold;
+static bool bt_hold_resume_ap;
 
 static scan_ap_t scan_aps[WIFI_SCAN_MAX];
 static int scan_n;
@@ -363,6 +365,11 @@ static void sta_disconnect(void) {
 }
 
 static void start_ap(void) {
+    if (bt_hold) {
+        bt_hold_resume_ap = true;
+        printf("wifi: AP start deferred (Bluetooth using radio)\n");
+        return;
+    }
     if (ap_up) {
         stop_ap();
     }
@@ -449,7 +456,10 @@ static int scan_cb(void *env, const cyw43_ev_scan_result_t *r) {
 }
 
 static void begin_scan(void) {
-    if (state == ST_JOIN || connecting) {
+    if (bt_hold || state == ST_JOIN || connecting) {
+        if (bt_hold) {
+            pending_scan = true;
+        }
         return;
     }
     if (cyw43_wifi_scan_active(&cyw43_state)) {
@@ -572,23 +582,23 @@ void wifi_poll(void) {
         dirty_config = false;
         persist_config();
     }
-    if (pending_ap) {
+    if (pending_ap && !bt_hold) {
         pending_ap = false;
         pending_join = false;
         start_ap();
     }
-    if (pending_join && !cyw43_wifi_scan_active(&cyw43_state) && !scanning) {
+    if (pending_join && !bt_hold && !cyw43_wifi_scan_active(&cyw43_state) && !scanning) {
         pending_join = false;
         begin_join(pending_ssid, pending_pass);
     }
-    if (pending_scan && state != ST_JOIN && !connecting && !bt_is_connecting()) {
+    if (pending_scan && !bt_hold && state != ST_JOIN && !connecting && !bt_is_connecting()) {
         pending_scan = false;
         begin_scan();
     }
 
-    if (state == ST_BOOT && timed_out(now, boot_start, WIFI_BOOT_MS)) {
+    if (state == ST_BOOT && !bt_hold && timed_out(now, boot_start, WIFI_BOOT_MS)) {
         start_ap();
-    } else if (state == ST_BOOT && scan_done && !pending_join) {
+    } else if (state == ST_BOOT && !bt_hold && scan_done && !pending_join) {
         const known_t *k = known_in_scan();
         if (k) {
             begin_join(k->ssid, k->password);
@@ -649,14 +659,14 @@ void wifi_poll(void) {
         }
     }
 
-    if (state == ST_AP && scan_allowed_periodic() && !scanning && !pending_join &&
+    if (state == ST_AP && !bt_hold && scan_allowed_periodic() && !scanning && !pending_join &&
         !bt_is_connecting() && !bt_is_connected() &&
         (scan_soon || timed_out(now, last_period_scan, WIFI_PERIOD_MS))) {
         scan_soon = false;
         last_period_scan = now;
         begin_scan();
     }
-    if (state == ST_AP && scan_done && !scanning && !pending_join &&
+    if (state == ST_AP && !bt_hold && scan_done && !scanning && !pending_join &&
         timed_out(now, last_join_fail, WIFI_JOIN_BACKOFF_MS)) {
         scan_done = false;
         const known_t *k = known_in_scan();
@@ -863,4 +873,41 @@ int wifi_set_ap_creds(const char *ssid, const char *password) {
 int wifi_force_ap(void) {
     pending_ap = true;
     return 0;
+}
+
+void wifi_bt_radio_hold(bool hold) {
+    if (hold) {
+        if (bt_hold) {
+            return;
+        }
+        bt_hold = true;
+        if (state == ST_JOIN || connecting) {
+            printf("wifi: abort STA join for Bluetooth\n");
+            cyw43_arch_lwip_begin();
+            sta_disconnect();
+            cyw43_arch_lwip_end();
+            connecting = false;
+            last_join_fail = to_ms_since_boot(get_absolute_time());
+            state = ST_AP;
+            bt_hold_resume_ap = true;
+        }
+        if (ap_up) {
+            bt_hold_resume_ap = true;
+            printf("wifi: pause AP for Bluetooth\n");
+            stop_ap();
+            /* CYW43439 needs a beat after AP teardown before Classic paging. */
+            sleep_ms(150);
+        }
+        return;
+    }
+    if (!bt_hold) {
+        return;
+    }
+    bt_hold = false;
+    /* Resume from wifi_poll, not the BTstack callback that released the hold. */
+    if (bt_hold_resume_ap && !ap_up && state != ST_STA && state != ST_JOIN) {
+        pending_ap = true;
+        printf("wifi: AP resume queued after Bluetooth\n");
+    }
+    bt_hold_resume_ap = false;
 }

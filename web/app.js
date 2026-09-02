@@ -132,6 +132,13 @@ function numBounds(el) {
         case "cal-oy":
         case "cal-ph":
             return [-80, 80];
+        case "cal-sx0":
+        case "cal-sy0":
+            return [0, 380];
+        case "cal-sx1":
+            return [3, 383];
+        case "cal-sy1":
+            return [3, 239];
         case "cal-offx":
         case "cal-offy":
             return [-10, 10];

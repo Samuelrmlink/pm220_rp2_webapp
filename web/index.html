@@ -69,7 +69,15 @@
             <input id="cal-oy" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
             <label for="cal-ph">Print height adj (dots)</label>
             <input id="cal-ph" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
-            <p class="cal-hint">Positive origin or offset Y moves the print down the label. Negative print height crops more from the bottom of the canvas.</p>
+            <label for="cal-sx0">Safe x0 (dots)</label>
+            <input id="cal-sx0" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <label for="cal-sy0">Safe y0 (dots)</label>
+            <input id="cal-sy0" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <label for="cal-sx1">Safe x1 (dots)</label>
+            <input id="cal-sx1" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <label for="cal-sy1">Safe y1 (dots)</label>
+            <input id="cal-sy1" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <p class="cal-hint">Positive origin or offset Y moves the print down the label. Negative print height crops more from the bottom of the canvas. Safe rect is the green editor box; Test print draws it dotted next to the original solid frame.</p>
             <div class="picker-actions">
                 <button type="button" id="cal-test">Test print</button>
                 <button type="button" id="cal-reset">Reset</button>

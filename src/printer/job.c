@@ -16,6 +16,47 @@ static int print_height_adj;
 static float offset_x_mm;
 static float offset_y_mm;
 static float gap_mm;
+static int safe_x0;
+static int safe_y0;
+static int safe_x1;
+static int safe_y1;
+
+static void safe_factory(void) {
+    int inset = tspl_mm_to_dots(TSPL_SAFE_MARGIN_MM);
+    safe_x0 = inset;
+    safe_y0 = inset;
+    safe_x1 = TSPL_WIDTH_DOTS - 1 - inset;
+    safe_y1 = TSPL_HEIGHT_DOTS - 1 - inset;
+}
+
+static void safe_clamp(void) {
+    if (safe_x0 < 0) {
+        safe_x0 = 0;
+    }
+    if (safe_y0 < 0) {
+        safe_y0 = 0;
+    }
+    if (safe_x1 >= TSPL_WIDTH_DOTS) {
+        safe_x1 = TSPL_WIDTH_DOTS - 1;
+    }
+    if (safe_y1 >= TSPL_HEIGHT_DOTS) {
+        safe_y1 = TSPL_HEIGHT_DOTS - 1;
+    }
+    if (safe_x1 < safe_x0 + 3) {
+        safe_x1 = safe_x0 + 3;
+        if (safe_x1 >= TSPL_WIDTH_DOTS) {
+            safe_x1 = TSPL_WIDTH_DOTS - 1;
+            safe_x0 = safe_x1 - 3;
+        }
+    }
+    if (safe_y1 < safe_y0 + 3) {
+        safe_y1 = safe_y0 + 3;
+        if (safe_y1 >= TSPL_HEIGHT_DOTS) {
+            safe_y1 = TSPL_HEIGHT_DOTS - 1;
+            safe_y0 = safe_y1 - 3;
+        }
+    }
+}
 
 static int clampi(int v, int lo, int hi) {
     if (v < lo) {
@@ -94,12 +135,13 @@ static void cal_load(void) {
     offset_x_mm = TSPL_OFFSET_X_MM;
     offset_y_mm = TSPL_OFFSET_Y_MM;
     gap_mm = TSPL_DEFAULT_GAP_MM;
+    safe_factory();
     size_t sz = 0;
     int h = fs_begin_read(CAL_PATH, &sz);
     if (h < 0) {
         return;
     }
-    char buf[256];
+    char buf[320];
     if (sz >= sizeof(buf)) {
         sz = sizeof(buf) - 1;
     }
@@ -129,6 +171,19 @@ static void cal_load(void) {
     if (json_float_field(buf, "gap_mm", &f)) {
         gap_mm = clampf(f, 0.0f, CAL_MM_LIM);
     }
+    if (json_int_field(buf, "safe_x0", &v)) {
+        safe_x0 = v;
+    }
+    if (json_int_field(buf, "safe_y0", &v)) {
+        safe_y0 = v;
+    }
+    if (json_int_field(buf, "safe_x1", &v)) {
+        safe_x1 = v;
+    }
+    if (json_int_field(buf, "safe_y1", &v)) {
+        safe_y1 = v;
+    }
+    safe_clamp();
 }
 
 static bool fb_get(const uint8_t *fb, int wbytes, int w, int h, int x, int y) {
@@ -157,6 +212,7 @@ static void fb_fill_white(uint8_t *fb, size_t n) {
 }
 
 static void draw_frame(uint8_t *fb, int wbytes, int w, int h) {
+    cal_load();
     const int thickness = 3;
     int inset_x = tspl_mm_to_dots(2.0f);
     int inset_y0 = tspl_mm_to_dots(2.0f);
@@ -195,6 +251,27 @@ static void draw_frame(uint8_t *fb, int wbytes, int w, int h) {
         fb_set(fb, wbytes, w, h, cx + i, cy + 1, true);
         fb_set(fb, wbytes, w, h, cx, cy + i, true);
         fb_set(fb, wbytes, w, h, cx + 1, cy + i, true);
+    }
+    for (int t = 0; t < 2; t++) {
+        int sx0 = safe_x0 + t;
+        int sy0 = safe_y0 + t;
+        int sx1 = safe_x1 - t;
+        int sy1 = safe_y1 - t;
+        if (sx1 <= sx0 || sy1 <= sy0) {
+            break;
+        }
+        for (int x = sx0; x <= sx1; x++) {
+            if ((x & 7) < 4) {
+                fb_set(fb, wbytes, w, h, x, sy0, true);
+                fb_set(fb, wbytes, w, h, x, sy1, true);
+            }
+        }
+        for (int y = sy0; y <= sy1; y++) {
+            if ((y & 7) < 4) {
+                fb_set(fb, wbytes, w, h, sx0, y, true);
+                fb_set(fb, wbytes, w, h, sx1, y, true);
+            }
+        }
     }
 }
 
@@ -317,11 +394,6 @@ static bool layout_and_build(const uint8_t *src, int src_wbytes, int src_w, int 
 int job_media_json(char *buf, size_t cap) {
     job_layout_t L;
     job_compute_layout(TSPL_WIDTH_DOTS, TSPL_HEIGHT_DOTS, &L);
-    int inset = tspl_mm_to_dots(TSPL_SAFE_MARGIN_MM);
-    int x0 = inset;
-    int y0 = inset;
-    int x1 = TSPL_WIDTH_DOTS - 1 - inset;
-    int y1 = TSPL_HEIGHT_DOTS - 1 - inset;
     return snprintf(buf, cap,
                     "{\"width_mm\":%g,\"height_mm\":%g,\"gap_mm\":%g,\"dpi\":%d,"
                     "\"max_print_width_mm\":%g,\"offset_x_mm\":%g,\"offset_y_mm\":%g,"
@@ -338,7 +410,7 @@ int job_media_json(char *buf, size_t cap) {
                     (double)offset_y_mm, (double)TSPL_SAFE_MARGIN_MM,
                     TSPL_DEFAULT_DENSITY,
                     TSPL_WIDTH_DOTS, TSPL_HEIGHT_DOTS, TSPL_WIDTH_BYTES,
-                    TSPL_BITMAP_MAX, x0, y0, x1, y1,
+                    TSPL_BITMAP_MAX, safe_x0, safe_y0, safe_x1, safe_y1,
                     origin_x_adj, origin_y_adj, print_height_adj,
                     L.origin_x, L.origin_y, L.print_width_dots, L.print_height_dots,
                     L.shift_x, L.shift_y);
