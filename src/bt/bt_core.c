@@ -4,12 +4,15 @@
 #include <string.h>
 #include "btstack.h"
 #include "classic/sdp_client.h"
+#include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
 #include "printer/tspl.h"
+#include "fs/fs.h"
 
 #define MAX_SCAN 16
-#define INQUIRY_INTERVAL 5
+#define INQUIRY_INTERVAL 8
 #define SPP_FALLBACK_CHANNEL 1
+#define BT_PEER_PATH "settings/bt.json"
 
 typedef enum {
     ST_IDLE = 0,
@@ -48,12 +51,78 @@ static char last_rx[96];
 static bool pending_battery_query;
 static uint8_t tx_job[TSPL_JOB_MAX];
 static size_t tx_len;
+static uint32_t next_page_ms;
+static uint32_t page_backoff_ms = 8000;
+static uint32_t last_keepalive_ms;
 static size_t tx_off;
 
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void print_pump(void);
 static void open_rfcomm(uint8_t channel);
 static void set_error(const char *msg);
+
+static void peer_save(void) {
+    if (!peer_set) {
+        return;
+    }
+    char buf[80];
+    snprintf(buf, sizeof(buf), "{\"address\":\"%s\"}", bd_addr_to_str(peer_addr));
+    if (fs_begin_write(BT_PEER_PATH) < 0) {
+        return;
+    }
+    int n = fs_write((const uint8_t *)buf, strlen(buf));
+    if (fs_end_write() < 0 || n < 0) {
+        fs_abort_write();
+    }
+}
+
+static void peer_load(void) {
+    size_t sz = 0;
+    int h = fs_begin_read(BT_PEER_PATH, &sz);
+    if (h < 0) {
+        return;
+    }
+    char buf[96];
+    if (sz >= sizeof(buf)) {
+        sz = sizeof(buf) - 1;
+    }
+    int n = fs_read(h, (uint8_t *)buf, sz);
+    fs_end_read(h);
+    if (n <= 0) {
+        return;
+    }
+    buf[n] = 0;
+    const char *p = strstr(buf, "\"address\"");
+    if (!p) {
+        return;
+    }
+    p += 9;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p != ':') {
+        return;
+    }
+    p++;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p != '"') {
+        return;
+    }
+    p++;
+    char addr[24];
+    size_t i = 0;
+    while (p[i] && p[i] != '"' && i + 1 < sizeof(addr)) {
+        addr[i] = p[i];
+        i++;
+    }
+    addr[i] = 0;
+    if (sscanf_bd_addr(addr, peer_addr)) {
+        peer_set = true;
+        printf("bt: remembered printer %s\n", bd_addr_to_str(peer_addr));
+    }
+}
 
 static bool is_auth_status(uint8_t status) {
     return status == ERROR_CODE_AUTHENTICATION_FAILURE ||
@@ -72,6 +141,14 @@ static const char *hci_status_name(uint8_t status) {
             return "pin/key missing";
         case ERROR_CODE_CONNECTION_TIMEOUT:
             return "connection timeout";
+        case ERROR_CODE_REMOTE_USER_TERMINATED_CONNECTION:
+            return "remote hangup";
+        case ERROR_CODE_CONNECTION_TERMINATED_BY_LOCAL_HOST:
+            return "local hangup";
+        case ERROR_CODE_LMP_RESPONSE_TIMEOUT_LL_RESPONSE_TIMEOUT:
+            return "lmp timeout";
+        case ERROR_CODE_CONNECTION_FAILED_TO_BE_ESTABLISHED:
+            return "connect not established";
         case ERROR_CODE_CONNECTION_REJECTED_DUE_TO_SECURITY_REASONS:
             return "rejected (security)";
         case L2CAP_CONNECTION_PIN_OR_LINK_KEY_MISSING:
@@ -89,6 +166,14 @@ static void drop_peer_key(void) {
     printf("bt: dropped link key for %s\n", bd_addr_to_str(peer_addr));
 }
 
+static uint32_t now_ms(void) {
+    return to_ms_since_boot(get_absolute_time());
+}
+
+static void arm_page_backoff(uint32_t ms) {
+    next_page_ms = now_ms() + ms;
+}
+
 static void connect_failed(uint8_t status) {
     char msg[80];
     const char *why = hci_status_name(status);
@@ -99,6 +184,20 @@ static void connect_failed(uint8_t status) {
     }
     set_error(msg);
     rfcomm_cid = 0;
+    if (status == ERROR_CODE_PAGE_TIMEOUT || status == ERROR_CODE_CONNECTION_TIMEOUT) {
+        drop_peer_key();
+        arm_page_backoff(page_backoff_ms);
+        if (page_backoff_ms < 60000) {
+            page_backoff_ms *= 2;
+            if (page_backoff_ms > 60000) {
+                page_backoff_ms = 60000;
+            }
+        }
+        retry_after_disc = false;
+        auth_retry = false;
+        state = ST_IDLE;
+        return;
+    }
     if (is_auth_status(status) && !auth_retry) {
         auth_retry = true;
         pin_alt = true;
@@ -154,7 +253,7 @@ static int json_escape(char *dst, size_t cap, const char *src) {
     return (int)o;
 }
 
-static bool pick_target(bd_addr_t out) {
+static bool pick_scanned_printer(bd_addr_t out) {
     for (int i = 0; i < device_count; i++) {
         if (devices[i].printer) {
             memcpy(out, devices[i].addr, 6);
@@ -163,6 +262,13 @@ static bool pick_target(bd_addr_t out) {
     }
     if (device_count == 1) {
         memcpy(out, devices[0].addr, 6);
+        return true;
+    }
+    return false;
+}
+
+static bool pick_target(bd_addr_t out) {
+    if (pick_scanned_printer(out)) {
         return true;
     }
     if (peer_set) {
@@ -182,6 +288,7 @@ static void start_sdp_query(void *context) {
         snprintf(msg, sizeof(msg), "SDP query start failed 0x%02x", err);
         set_error(msg);
         state = ST_IDLE;
+        arm_page_backoff(page_backoff_ms);
     } else {
         printf("bt: SDP query for SPP on %s\n", bd_addr_to_str(peer_addr));
     }
@@ -228,7 +335,7 @@ static void handle_sdp_event(uint8_t *packet) {
                 printf("bt: no SPP in SDP, falling back to channel %d\n", SPP_FALLBACK_CHANNEL);
                 spp_channel = SPP_FALLBACK_CHANNEL;
             }
-            if (retry_after_disc) {
+            if (retry_after_disc || state != ST_CONNECTING) {
                 break;
             }
             open_rfcomm(spp_channel);
@@ -270,7 +377,12 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 bd_addr_t local;
                 gap_local_bd_addr(local);
                 printf("BT Classic up, local addr %s\n", bd_addr_to_str(local));
-                bt_scan_start(8);
+                if (peer_set && !inhibit_auto_connect) {
+                    printf("bt: page remembered printer %s\n", bd_addr_to_str(peer_addr));
+                    begin_sdp();
+                } else {
+                    bt_scan_start(8);
+                }
             }
             break;
         case GAP_EVENT_INQUIRY_RESULT: {
@@ -322,10 +434,14 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             if (sdp_after_inquiry) {
                 sdp_after_inquiry = false;
                 begin_sdp();
-            } else if (!inhibit_auto_connect && state == ST_IDLE && pick_target(peer_addr)) {
-                peer_set = true;
-                printf("bt: auto-connect %s\n", bd_addr_to_str(peer_addr));
-                begin_sdp();
+            } else if (!inhibit_auto_connect && state == ST_IDLE) {
+                bd_addr_t found;
+                if (pick_scanned_printer(found)) {
+                    memcpy(peer_addr, found, 6);
+                    peer_set = true;
+                    printf("bt: auto-connect scanned %s\n", bd_addr_to_str(peer_addr));
+                    begin_sdp();
+                }
             }
             break;
         case HCI_EVENT_CONNECTION_COMPLETE: {
@@ -346,7 +462,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
         }
         case HCI_EVENT_DISCONNECTION_COMPLETE: {
             uint8_t reason = hci_event_disconnection_complete_get_reason(packet);
-            printf("bt: ACL down reason 0x%02x\n", reason);
+            bool was_up = (state == ST_CONNECTED);
+            const char *why = hci_status_name(reason);
+            printf("bt: ACL down reason 0x%02x %s\n", reason, why);
             acl_handle = HCI_CON_HANDLE_INVALID;
             rfcomm_cid = 0;
             rfcomm_mtu = 0;
@@ -357,6 +475,18 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 retry_after_disc = false;
                 open_rfcomm(spp_channel ? spp_channel : SPP_FALLBACK_CHANNEL);
                 break;
+            }
+            if (was_up) {
+                char msg[80];
+                if (why[0]) {
+                    snprintf(msg, sizeof(msg), "link dropped 0x%02x (%s)", reason, why);
+                } else {
+                    snprintf(msg, sizeof(msg), "link dropped 0x%02x", reason);
+                }
+                set_error(msg);
+                if (reason != ERROR_CODE_CONNECTION_TERMINATED_BY_LOCAL_HOST) {
+                    drop_peer_key();
+                }
             }
             if (state == ST_CONNECTED || state == ST_CONNECTING) {
                 state = ST_IDLE;
@@ -414,6 +544,10 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 pin_alt = false;
                 printf("bt: RFCOMM open cid %u mtu %u %s\n", rfcomm_cid, rfcomm_mtu,
                        bd_addr_to_str(peer_addr));
+                page_backoff_ms = 8000;
+                next_page_ms = 0;
+                peer_save();
+                last_keepalive_ms = now_ms();
                 pending_battery_query = true;
                 rfcomm_request_can_send_now_event(rfcomm_cid);
             } else {
@@ -461,7 +595,11 @@ void bt_scan_start(int seconds) {
     }
     device_count = 0;
     state = ST_SCANNING;
-    gap_inquiry_start(INQUIRY_INTERVAL);
+    int err = gap_inquiry_start(INQUIRY_INTERVAL);
+    if (err) {
+        printf("bt: inquiry start failed 0x%02x\n", (unsigned)err);
+        state = ST_IDLE;
+    }
 }
 
 bool bt_connect(const char *addr) {
@@ -484,7 +622,10 @@ bool bt_connect(const char *addr) {
     }
     memcpy(peer_addr, target, 6);
     peer_set = true;
+    peer_save();
     inhibit_auto_connect = false;
+    page_backoff_ms = 8000;
+    next_page_ms = 0;
     auth_retry = false;
     retry_after_disc = false;
     pin_alt = false;
@@ -574,6 +715,34 @@ void bt_disconnect(void) {
         gap_inquiry_stop();
     }
     state = ST_IDLE;
+}
+
+void bt_poll(void) {
+    uint32_t now = now_ms();
+    if (state == ST_CONNECTED && rfcomm_cid && !bt_is_printing()) {
+        if (now - last_keepalive_ms > 25000) {
+            last_keepalive_ms = now;
+            pending_battery_query = true;
+            rfcomm_request_can_send_now_event(rfcomm_cid);
+        }
+        return;
+    }
+    if (inhibit_auto_connect || !peer_set) {
+        return;
+    }
+    if (state != ST_IDLE) {
+        return;
+    }
+    if ((int32_t)(now - next_page_ms) < 0) {
+        return;
+    }
+    printf("bt: retry page %s (waited %u ms)\n", bd_addr_to_str(peer_addr),
+           (unsigned)page_backoff_ms);
+    begin_sdp();
+}
+
+bool bt_has_peer(void) {
+    return peer_set;
 }
 
 bool bt_is_scanning(void) {
@@ -672,9 +841,11 @@ void bt_core_init(void) {
         SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
     gap_ssp_set_auto_accept(1);
     gap_set_required_encryption_key_size(7);
+    gap_set_page_timeout(0x2000);
     gap_set_bondable_mode(1);
     gap_discoverable_control(0);
     gap_connectable_control(1);
     acl_handle = HCI_CON_HANDLE_INVALID;
+    peer_load();
     hci_power_control(HCI_POWER_ON);
 }

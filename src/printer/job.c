@@ -2,7 +2,134 @@
 #include "tspl.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "fs/fs.h"
+
+#define CAL_PATH "settings/print.json"
+#define CAL_ADJ_LIM 80
+#define CAL_MM_LIM 10.0f
+
+static int origin_x_adj;
+static int origin_y_adj;
+static int print_height_adj;
+static float offset_x_mm;
+static float offset_y_mm;
+static float gap_mm;
+
+static int clampi(int v, int lo, int hi) {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+static bool json_int_field(const char *body, const char *key, int *out) {
+    char pat[40];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char *p = strstr(body ? body : "", pat);
+    if (!p) {
+        return false;
+    }
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p != ':') {
+        return false;
+    }
+    p++;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p != '-' && (*p < '0' || *p > '9')) {
+        return false;
+    }
+    *out = atoi(p);
+    return true;
+}
+
+static bool json_float_field(const char *body, const char *key, float *out) {
+    char pat[40];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char *p = strstr(body ? body : "", pat);
+    if (!p) {
+        return false;
+    }
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p != ':') {
+        return false;
+    }
+    p++;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    if (*p != '-' && *p != '.' && (*p < '0' || *p > '9')) {
+        return false;
+    }
+    *out = strtof(p, NULL);
+    return true;
+}
+
+static float clampf(float v, float lo, float hi) {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+static void cal_load(void) {
+    origin_x_adj = 0;
+    origin_y_adj = 0;
+    print_height_adj = 0;
+    offset_x_mm = TSPL_OFFSET_X_MM;
+    offset_y_mm = TSPL_OFFSET_Y_MM;
+    gap_mm = TSPL_DEFAULT_GAP_MM;
+    size_t sz = 0;
+    int h = fs_begin_read(CAL_PATH, &sz);
+    if (h < 0) {
+        return;
+    }
+    char buf[256];
+    if (sz >= sizeof(buf)) {
+        sz = sizeof(buf) - 1;
+    }
+    int n = fs_read(h, (uint8_t *)buf, sz);
+    fs_end_read(h);
+    if (n <= 0) {
+        return;
+    }
+    buf[n] = 0;
+    int v;
+    float f;
+    if (json_int_field(buf, "origin_x_adj", &v)) {
+        origin_x_adj = clampi(v, -CAL_ADJ_LIM, CAL_ADJ_LIM);
+    }
+    if (json_int_field(buf, "origin_y_adj", &v)) {
+        origin_y_adj = clampi(v, -CAL_ADJ_LIM, CAL_ADJ_LIM);
+    }
+    if (json_int_field(buf, "print_height_adj", &v)) {
+        print_height_adj = clampi(v, -CAL_ADJ_LIM, CAL_ADJ_LIM);
+    }
+    if (json_float_field(buf, "offset_x_mm", &f)) {
+        offset_x_mm = clampf(f, -CAL_MM_LIM, CAL_MM_LIM);
+    }
+    if (json_float_field(buf, "offset_y_mm", &f)) {
+        offset_y_mm = clampf(f, -CAL_MM_LIM, CAL_MM_LIM);
+    }
+    if (json_float_field(buf, "gap_mm", &f)) {
+        gap_mm = clampf(f, 0.0f, CAL_MM_LIM);
+    }
+}
 
 static bool fb_get(const uint8_t *fb, int wbytes, int w, int h, int x, int y) {
     if (x < 0 || y < 0 || x >= w || y >= h) {
@@ -72,6 +199,7 @@ static void draw_frame(uint8_t *fb, int wbytes, int w, int h) {
 }
 
 void job_compute_layout(int src_w, int src_h, job_layout_t *layout) {
+    cal_load();
     int page_w = tspl_mm_to_dots(TSPL_DEFAULT_WIDTH_MM);
     int page_h = tspl_mm_to_dots(TSPL_DEFAULT_HEIGHT_MM);
     int origin_x = (page_w - src_w) / 2;
@@ -82,8 +210,8 @@ void job_compute_layout(int src_w, int src_h, job_layout_t *layout) {
     if (origin_y < 0) {
         origin_y = 0;
     }
-    int dx = tspl_mm_to_dots(TSPL_OFFSET_X_MM);
-    int dy = tspl_mm_to_dots(TSPL_OFFSET_Y_MM);
+    int dx = tspl_mm_to_dots(offset_x_mm);
+    int dy = tspl_mm_to_dots(offset_y_mm);
     int shift_x = 0;
     int shift_y = 0;
     if (origin_x + dx < 0) {
@@ -98,6 +226,22 @@ void job_compute_layout(int src_w, int src_h, job_layout_t *layout) {
     } else {
         origin_y += dy;
     }
+    origin_x += origin_x_adj;
+    origin_y += origin_y_adj;
+    if (origin_x < 0) {
+        shift_x += origin_x;
+        origin_x = 0;
+    }
+    if (origin_y < 0) {
+        shift_y += origin_y;
+        origin_y = 0;
+    }
+    if (origin_x > page_w - 1) {
+        origin_x = page_w - 1;
+    }
+    if (origin_y > page_h - 1) {
+        origin_y = page_h - 1;
+    }
     int avail_w = page_w - origin_x;
     int avail_h = page_h - origin_y;
     if (avail_w < 1) {
@@ -110,6 +254,13 @@ void job_compute_layout(int src_w, int src_h, job_layout_t *layout) {
     layout->origin_y = origin_y;
     layout->print_width_dots = src_w < avail_w ? src_w : avail_w;
     layout->print_height_dots = src_h < avail_h ? src_h : avail_h;
+    layout->print_height_dots += print_height_adj;
+    if (layout->print_height_dots < 1) {
+        layout->print_height_dots = 1;
+    }
+    if (layout->print_height_dots > avail_h) {
+        layout->print_height_dots = avail_h;
+    }
     layout->shift_x = shift_x;
     layout->shift_y = shift_y;
 }
@@ -149,7 +300,7 @@ static bool layout_and_build(const uint8_t *src, int src_wbytes, int src_w, int 
     }
     size_t n = tspl_build_job(out, out_cap, cropped, out_wbytes, out_h,
                               TSPL_DEFAULT_WIDTH_MM, TSPL_DEFAULT_HEIGHT_MM,
-                              TSPL_DEFAULT_GAP_MM, TSPL_DEFAULT_DENSITY,
+                              gap_mm, TSPL_DEFAULT_DENSITY,
                               L.origin_x, L.origin_y);
     if (!n) {
         return false;
@@ -178,15 +329,17 @@ int job_media_json(char *buf, size_t cap) {
                     "\"width_dots\":%d,\"height_dots\":%d,\"width_bytes\":%d,"
                     "\"bitmap_bytes\":%d,\"bit_order\":\"msb-first\",\"polarity\":\"0=burn\","
                     "\"safe_rect\":{\"x0\":%d,\"y0\":%d,\"x1\":%d,\"y1\":%d},"
+                    "\"origin_x_adj\":%d,\"origin_y_adj\":%d,\"print_height_adj\":%d,"
                     "\"after_offset\":{\"origin_x\":%d,\"origin_y\":%d,"
                     "\"width_dots\":%d,\"height_dots\":%d,\"shift_x\":%d,\"shift_y\":%d}}",
                     (double)TSPL_DEFAULT_WIDTH_MM, (double)TSPL_DEFAULT_HEIGHT_MM,
-                    (double)TSPL_DEFAULT_GAP_MM, TSPL_DPI,
-                    (double)TSPL_MAX_WIDTH_MM, (double)TSPL_OFFSET_X_MM,
-                    (double)TSPL_OFFSET_Y_MM, (double)TSPL_SAFE_MARGIN_MM,
+                    (double)gap_mm, TSPL_DPI,
+                    (double)TSPL_MAX_WIDTH_MM, (double)offset_x_mm,
+                    (double)offset_y_mm, (double)TSPL_SAFE_MARGIN_MM,
                     TSPL_DEFAULT_DENSITY,
                     TSPL_WIDTH_DOTS, TSPL_HEIGHT_DOTS, TSPL_WIDTH_BYTES,
                     TSPL_BITMAP_MAX, x0, y0, x1, y1,
+                    origin_x_adj, origin_y_adj, print_height_adj,
                     L.origin_x, L.origin_y, L.print_width_dots, L.print_height_dots,
                     L.shift_x, L.shift_y);
 }

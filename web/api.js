@@ -73,6 +73,21 @@ export function fetchMedia() {
     return getJson("/api/media");
 }
 
+export async function postPrintTest() {
+    const r = await apiFetch("/api/print/test", { method: "POST" });
+    const text = await r.text();
+    let json;
+    try {
+        json = JSON.parse(text);
+    } catch {
+        json = { ok: false, error: text || r.statusText };
+    }
+    if (!r.ok) {
+        throw new Error(json.error || `${r.status}`);
+    }
+    return json;
+}
+
 export async function postPrint(packed) {
     const r = await apiFetch("/api/print", {
         method: "POST",

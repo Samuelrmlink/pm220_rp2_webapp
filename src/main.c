@@ -50,8 +50,9 @@ int main(void) {
             usb_ncm_log();
         }
         wifi_poll();
-        if (!bt_is_connected() && !bt_is_connecting() && !bt_is_scanning() &&
-            now - last_scan > 15000) {
+        bt_poll();
+        if (!bt_has_peer() && !bt_is_connected() && !bt_is_connecting() &&
+            !bt_is_scanning() && now - last_scan > 15000) {
             last_scan = now;
             printf("starting BT inquiry\n");
             bt_scan_start(8);

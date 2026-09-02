@@ -704,6 +704,41 @@ aside .empty {
 }
 
 #wifi[hidden] { display: none; }
+#cal[hidden] { display: none; }
+
+.cal-panel {
+    width: min(420px, 100%);
+}
+
+.cal-hint {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+    margin: 0 0 10px;
+}
+
+.cal-effective {
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    margin: 0 0 12px;
+    padding: 8px;
+    background: #1a1a1a;
+    border-radius: 3px;
+}
+
+#cal .num-spin {
+    display: flex;
+    width: 100%;
+    margin: 0 0 8px;
+}
+
+#cal .num-spin input {
+    flex: 1;
+}
+
+#cal .num-spin-btns {
+    display: flex;
+}
 
 .wifi-panel {
     width: min(560px, 100%);

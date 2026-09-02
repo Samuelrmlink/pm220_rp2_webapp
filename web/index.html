@@ -27,6 +27,7 @@
         <input id="file" type="file" accept=".json,.pm220.json,application/json" hidden>
         <input id="image-file" type="file" accept="image/png,image/jpeg,image/*" hidden>
         <div class="header-right">
+            <button type="button" id="calibrate">Calibrate</button>
             <button type="button" id="wifi-settings">WiFi Settings</button>
             <span id="status">connecting…</span>
         </div>
@@ -46,6 +47,34 @@
                 <button type="button" id="picker-pc">This computer…</button>
                 <button type="button" id="picker-save" class="primary">Save</button>
                 <button type="button" id="picker-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+    <div id="cal" hidden>
+        <div class="picker-backdrop"></div>
+        <div class="picker-panel cal-panel" role="dialog" aria-labelledby="cal-title">
+            <h2 id="cal-title">Printer calibration</h2>
+            <p class="cal-hint">Die-cut registration is offset_x_mm / offset_y_mm (factory −1.25 / +3). Origin adj is extra dots after that. Print height adj crops the BITMAP. Saved in settings/print.json.</p>
+            <p id="cal-effective" class="cal-effective"></p>
+            <p id="cal-err" class="picker-err" hidden></p>
+            <label for="cal-offx">Offset X (mm)</label>
+            <input id="cal-offx" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <label for="cal-offy">Offset Y (mm)</label>
+            <input id="cal-offy" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <label for="cal-gap">Gap (mm)</label>
+            <input id="cal-gap" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <label for="cal-ox">Origin X adj (dots)</label>
+            <input id="cal-ox" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <label for="cal-oy">Origin Y adj (dots)</label>
+            <input id="cal-oy" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <label for="cal-ph">Print height adj (dots)</label>
+            <input id="cal-ph" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false">
+            <p class="cal-hint">Positive origin or offset Y moves the print down the label. Negative print height crops more from the bottom of the canvas.</p>
+            <div class="picker-actions">
+                <button type="button" id="cal-test">Test print</button>
+                <button type="button" id="cal-reset">Reset</button>
+                <button type="button" id="cal-save" class="primary">Save</button>
+                <button type="button" id="cal-close">Close</button>
             </div>
         </div>
     </div>

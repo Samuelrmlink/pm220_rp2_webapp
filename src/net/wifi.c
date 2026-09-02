@@ -650,7 +650,7 @@ void wifi_poll(void) {
     }
 
     if (state == ST_AP && scan_allowed_periodic() && !scanning && !pending_join &&
-        !bt_is_connecting() &&
+        !bt_is_connecting() && !bt_is_connected() &&
         (scan_soon || timed_out(now, last_period_scan, WIFI_PERIOD_MS))) {
         scan_soon = false;
         last_period_scan = now;

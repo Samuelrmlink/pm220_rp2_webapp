@@ -4,6 +4,7 @@ import { boxOverflows, rasterize } from "./raster.js";
 import { fromDocument, toDocument } from "./doc.js";
 import { bindPicker } from "./files.js";
 import { bindWifiSettings } from "./wifi.js";
+import { bindCalibrate } from "./cal.js";
 import { code128Error } from "./barcode.js";
 import { qrError } from "./qr.js";
 import { importImageFile } from "./image.js";
@@ -104,7 +105,11 @@ function parseIntField(id) {
 }
 
 function isNumField(el) {
-    return el && el.tagName === "INPUT" && el.getAttribute("inputmode") === "numeric";
+    if (!el || el.tagName !== "INPUT") {
+        return false;
+    }
+    const mode = el.getAttribute("inputmode");
+    return mode === "numeric" || mode === "decimal";
 }
 
 function numBounds(el) {
@@ -123,6 +128,15 @@ function numBounds(el) {
             return [8, page.width_dots];
         case "oh":
             return [8, page.height_dots];
+        case "cal-ox":
+        case "cal-oy":
+        case "cal-ph":
+            return [-80, 80];
+        case "cal-offx":
+        case "cal-offy":
+            return [-10, 10];
+        case "cal-gap":
+            return [0, 10];
         default:
             return [null, null];
     }
@@ -132,12 +146,29 @@ function stepNumField(el, delta) {
     if (!el || el.disabled || !isNumField(el)) {
         return;
     }
+    const [lo, hi] = numBounds(el);
+    if (el.id === "cal-offx" || el.id === "cal-offy" || el.id === "cal-gap") {
+        let n = Number(el.value);
+        if (!Number.isFinite(n)) {
+            n = 0;
+        }
+        n += delta * 0.25;
+        n = Math.round(n * 100) / 100;
+        if (lo != null && n < lo) {
+            n = lo;
+        }
+        if (hi != null && n > hi) {
+            n = hi;
+        }
+        el.value = String(n);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+    }
     let n = parseIntField(el.id);
     if (n == null) {
         n = 0;
     }
     n += delta;
-    const [lo, hi] = numBounds(el);
     if (lo != null && n < lo) {
         n = lo;
     }
@@ -214,6 +245,28 @@ function layoutGuides() {
         crop.hidden = true;
     }
     editor.syncDom();
+}
+
+function applyMedia(media) {
+    if (!media || !media.width_dots) {
+        return;
+    }
+    page = {
+        width_dots: media.width_dots,
+        height_dots: media.height_dots,
+        width_bytes: media.width_bytes,
+        bitmap_bytes: media.bitmap_bytes,
+        dpi: media.dpi,
+        width_mm: media.width_mm,
+        height_mm: media.height_mm,
+        safe_rect: media.safe_rect,
+        after_offset: media.after_offset,
+    };
+    preview.width = page.width_dots;
+    preview.height = page.height_dots;
+    editor.setPage(page, page.safe_rect);
+    layoutGuides();
+    paint();
 }
 
 function paint() {
@@ -596,6 +649,7 @@ const picker = bindPicker({
     setStatus,
 });
 const wifiUi = bindWifiSettings({ setStatus });
+const calUi = bindCalibrate({ setStatus, applyMedia });
 
 $("file").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -777,7 +831,9 @@ $("nudge-pad").addEventListener("focusout", () => setTimeout(markNudgeFocus, 0))
 }
 
 function wrapNumSpins() {
-    for (const el of document.querySelectorAll("aside input[inputmode='numeric']")) {
+    for (const el of document.querySelectorAll(
+        "aside input[inputmode='numeric'], #cal input[inputmode='numeric'], #cal input[inputmode='decimal']",
+    )) {
         if (el.parentElement && el.parentElement.classList.contains("num-spin")) {
             continue;
         }
@@ -810,7 +866,7 @@ function wrapNumSpins() {
         holdWait = 0;
         holdRep = 0;
     };
-    document.querySelector("aside").addEventListener("pointerdown", (e) => {
+    const onDown = (e) => {
         const btn = e.target.closest(".num-spin-btns button");
         if (!btn) {
             return;
@@ -827,10 +883,13 @@ function wrapNumSpins() {
             holdRep = setInterval(() => stepNumField(input, delta), 50);
         }, 300);
         btn.setPointerCapture?.(e.pointerId);
-    });
-    document.querySelector("aside").addEventListener("pointerup", stopHold);
-    document.querySelector("aside").addEventListener("pointercancel", stopHold);
-    document.querySelector("aside").addEventListener("lostpointercapture", stopHold);
+    };
+    for (const root of document.querySelectorAll("aside, #cal")) {
+        root.addEventListener("pointerdown", onDown);
+        root.addEventListener("pointerup", stopHold);
+        root.addEventListener("pointercancel", stopHold);
+        root.addEventListener("lostpointercapture", stopHold);
+    }
 }
 
 wrapNumSpins();
@@ -851,6 +910,8 @@ function scheduleStatus() {
     if (document.hidden) {
         ms = 20000;
     } else if (typeof picker !== "undefined" && picker.isOpen()) {
+        ms = 30000;
+    } else if (typeof calUi !== "undefined" && calUi.isOpen()) {
         ms = 30000;
     } else if (typeof wifiUi !== "undefined" && wifiUi.isOpen()) {
         ms = 15000;
@@ -912,23 +973,7 @@ async function boot() {
     restore();
     refreshStatus();
     try {
-        const media = await fetchMedia();
-        page = {
-            width_dots: media.width_dots,
-            height_dots: media.height_dots,
-            width_bytes: media.width_bytes,
-            bitmap_bytes: media.bitmap_bytes,
-            dpi: media.dpi,
-            width_mm: media.width_mm,
-            height_mm: media.height_mm,
-            safe_rect: media.safe_rect,
-            after_offset: media.after_offset,
-        };
-        preview.width = page.width_dots;
-        preview.height = page.height_dots;
-        editor.setPage(page, page.safe_rect);
-        layoutGuides();
-        paint();
+        applyMedia(await fetchMedia());
     } catch {
         /* fallback page */
     }
