@@ -299,6 +299,10 @@ aside .checks {
     margin: 8px 0;
 }
 
+aside .checks.checks-stack {
+    grid-template-columns: 1fr;
+}
+
 aside .checks label {
     display: flex;
     align-items: center;

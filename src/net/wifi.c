@@ -456,8 +456,8 @@ static int scan_cb(void *env, const cyw43_ev_scan_result_t *r) {
 }
 
 static void begin_scan(void) {
-    if (bt_hold || state == ST_JOIN || connecting) {
-        if (bt_hold) {
+    if (bt_hold || bt_is_connected() || bt_is_connecting() || state == ST_JOIN || connecting) {
+        if (bt_hold || bt_is_connected() || bt_is_connecting()) {
             pending_scan = true;
         }
         return;
@@ -587,18 +587,21 @@ void wifi_poll(void) {
         pending_join = false;
         start_ap();
     }
-    if (pending_join && !bt_hold && !cyw43_wifi_scan_active(&cyw43_state) && !scanning) {
+    if (pending_join && !bt_hold && !bt_is_connected() && !bt_is_connecting() &&
+        !cyw43_wifi_scan_active(&cyw43_state) && !scanning) {
         pending_join = false;
         begin_join(pending_ssid, pending_pass);
     }
-    if (pending_scan && !bt_hold && state != ST_JOIN && !connecting && !bt_is_connecting()) {
+    if (pending_scan && !bt_hold && !bt_is_connected() && state != ST_JOIN && !connecting &&
+        !bt_is_connecting()) {
         pending_scan = false;
         begin_scan();
     }
 
     if (state == ST_BOOT && !bt_hold && timed_out(now, boot_start, WIFI_BOOT_MS)) {
         start_ap();
-    } else if (state == ST_BOOT && !bt_hold && scan_done && !pending_join) {
+    } else if (state == ST_BOOT && !bt_hold && !bt_is_connected() && !bt_is_connecting() &&
+               scan_done && !pending_join) {
         const known_t *k = known_in_scan();
         if (k) {
             begin_join(k->ssid, k->password);
@@ -666,7 +669,8 @@ void wifi_poll(void) {
         last_period_scan = now;
         begin_scan();
     }
-    if (state == ST_AP && !bt_hold && scan_done && !scanning && !pending_join &&
+    if (state == ST_AP && !bt_hold && !bt_is_connected() && !bt_is_connecting() &&
+        scan_done && !scanning && !pending_join &&
         timed_out(now, last_join_fail, WIFI_JOIN_BACKOFF_MS)) {
         scan_done = false;
         const known_t *k = known_in_scan();
@@ -881,19 +885,20 @@ void wifi_bt_radio_hold(bool hold) {
             return;
         }
         bt_hold = true;
+        if (state != ST_STA) {
+            bt_hold_resume_ap = true;
+        }
         if (state == ST_JOIN || connecting) {
-            printf("wifi: abort STA join for Bluetooth\n");
+            printf("wifi: abort STA join for Bluetooth page\n");
             cyw43_arch_lwip_begin();
             sta_disconnect();
             cyw43_arch_lwip_end();
             connecting = false;
             last_join_fail = to_ms_since_boot(get_absolute_time());
             state = ST_AP;
-            bt_hold_resume_ap = true;
         }
         if (ap_up) {
-            bt_hold_resume_ap = true;
-            printf("wifi: pause AP for Bluetooth\n");
+            printf("wifi: pause AP for Bluetooth page\n");
             stop_ap();
             /* CYW43439 needs a beat after AP teardown before Classic paging. */
             sleep_ms(150);

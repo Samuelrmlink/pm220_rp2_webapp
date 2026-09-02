@@ -58,18 +58,26 @@ static uint32_t last_keepalive_ms;
 static size_t tx_off;
 static uint32_t drop_count;
 static char last_drop[80];
+static uint32_t wifi_resume_ms;
 
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void print_pump(void);
 static void open_rfcomm(uint8_t channel);
 static void set_error(const char *msg);
+static uint32_t now_ms(void);
 
 static void radio_hold(void) {
+    wifi_resume_ms = 0;
     wifi_bt_radio_hold(true);
 }
 
 static void radio_release(void) {
+    wifi_resume_ms = 0;
     wifi_bt_radio_hold(false);
+}
+
+static void radio_release_soon(void) {
+    wifi_resume_ms = now_ms() + 400;
 }
 
 static void note_drop(const char *msg) {
@@ -577,6 +585,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 peer_save();
                 last_keepalive_ms = now_ms();
                 pending_battery_query = true;
+                radio_release_soon();
                 rfcomm_request_can_send_now_event(rfcomm_cid);
             } else {
                 hci_con_handle_t h = rfcomm_event_channel_opened_get_con_handle(packet);
@@ -757,6 +766,10 @@ void bt_disconnect(void) {
 void bt_poll(void) {
     uint32_t now = now_ms();
     if (state == ST_CONNECTED && rfcomm_cid) {
+        if (wifi_resume_ms && (int32_t)(now - wifi_resume_ms) >= 0) {
+            wifi_resume_ms = 0;
+            radio_release();
+        }
         if (bt_is_printing()) {
             if (rfcomm_can_send_packet_now(rfcomm_cid)) {
                 print_pump();

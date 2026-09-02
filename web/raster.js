@@ -35,6 +35,9 @@ export function layoutSize(box) {
 }
 
 export function boxOverflows(box, safe) {
+    if (!box || box.ignoreSafe || !safe) {
+        return false;
+    }
     const g = geom(box);
     return g.x1 < safe.x0 || g.y1 < safe.y0 || g.x2 > safe.x1 || g.y2 > safe.y1;
 }

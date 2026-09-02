@@ -465,6 +465,7 @@ function fillForm() {
         return;
     }
     $("rotate").value = String(box.rotate || 0);
+    $("ignore-safe").checked = !!box.ignoreSafe;
     setField("ox", box.x);
     setField("oy", box.y);
     setField("ow", box.width);
@@ -503,6 +504,7 @@ function readForm() {
     }
     const patch = {
         rotate: Number($("rotate").value),
+        ignoreSafe: $("ignore-safe").checked,
     };
     const x = parseIntField("ox");
     const y = parseIntField("oy");

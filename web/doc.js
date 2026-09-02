@@ -18,6 +18,7 @@ export function migrateObject(raw) {
     if (obj.type === "text" && obj.pristine !== true) {
         obj.pristine = false;
     }
+    obj.ignoreSafe = !!obj.ignoreSafe;
     return obj;
 }
 
