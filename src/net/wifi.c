@@ -12,6 +12,7 @@
 #include "net/mdns.h"
 #include "net/usb_ncm.h"
 #include "fs/fs.h"
+#include "bt/bt_core.h"
 
 #define WIFI_MAX_NET 8
 #define WIFI_SSID_MAX 32
@@ -580,7 +581,7 @@ void wifi_poll(void) {
         pending_join = false;
         begin_join(pending_ssid, pending_pass);
     }
-    if (pending_scan && state != ST_JOIN && !connecting) {
+    if (pending_scan && state != ST_JOIN && !connecting && !bt_is_connecting()) {
         pending_scan = false;
         begin_scan();
     }
@@ -649,6 +650,7 @@ void wifi_poll(void) {
     }
 
     if (state == ST_AP && scan_allowed_periodic() && !scanning && !pending_join &&
+        !bt_is_connecting() &&
         (scan_soon || timed_out(now, last_period_scan, WIFI_PERIOD_MS))) {
         scan_soon = false;
         last_period_scan = now;

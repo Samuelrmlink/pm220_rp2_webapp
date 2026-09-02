@@ -35,9 +35,12 @@ static bt_state_t state;
 static bool sdp_after_inquiry;
 static bool inhibit_auto_connect;
 static bool auth_retry;
+static bool retry_after_disc;
+static bool pin_alt;
 static uint8_t spp_channel;
 static uint16_t rfcomm_cid;
 static uint16_t rfcomm_mtu;
+static hci_con_handle_t acl_handle = HCI_CON_HANDLE_INVALID;
 static bd_addr_t peer_addr;
 static bool peer_set;
 static char last_error[80];
@@ -49,6 +52,69 @@ static size_t tx_off;
 
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void print_pump(void);
+static void open_rfcomm(uint8_t channel);
+static void set_error(const char *msg);
+
+static bool is_auth_status(uint8_t status) {
+    return status == ERROR_CODE_AUTHENTICATION_FAILURE ||
+           status == ERROR_CODE_PIN_OR_KEY_MISSING ||
+           status == ERROR_CODE_CONNECTION_REJECTED_DUE_TO_SECURITY_REASONS ||
+           status == L2CAP_CONNECTION_PIN_OR_LINK_KEY_MISSING;
+}
+
+static const char *hci_status_name(uint8_t status) {
+    switch (status) {
+        case ERROR_CODE_PAGE_TIMEOUT:
+            return "page timeout";
+        case ERROR_CODE_AUTHENTICATION_FAILURE:
+            return "auth failure";
+        case ERROR_CODE_PIN_OR_KEY_MISSING:
+            return "pin/key missing";
+        case ERROR_CODE_CONNECTION_TIMEOUT:
+            return "connection timeout";
+        case ERROR_CODE_CONNECTION_REJECTED_DUE_TO_SECURITY_REASONS:
+            return "rejected (security)";
+        case L2CAP_CONNECTION_PIN_OR_LINK_KEY_MISSING:
+            return "link key missing";
+        default:
+            return "";
+    }
+}
+
+static void drop_peer_key(void) {
+    if (!peer_set) {
+        return;
+    }
+    gap_drop_link_key_for_bd_addr(peer_addr);
+    printf("bt: dropped link key for %s\n", bd_addr_to_str(peer_addr));
+}
+
+static void connect_failed(uint8_t status) {
+    char msg[80];
+    const char *why = hci_status_name(status);
+    if (why[0]) {
+        snprintf(msg, sizeof(msg), "connect failed 0x%02x (%s)", status, why);
+    } else {
+        snprintf(msg, sizeof(msg), "connect failed 0x%02x", status);
+    }
+    set_error(msg);
+    rfcomm_cid = 0;
+    if (is_auth_status(status) && !auth_retry) {
+        auth_retry = true;
+        pin_alt = true;
+        drop_peer_key();
+        if (acl_handle != HCI_CON_HANDLE_INVALID) {
+            retry_after_disc = true;
+            gap_disconnect(acl_handle);
+            return;
+        }
+        open_rfcomm(spp_channel ? spp_channel : SPP_FALLBACK_CHANNEL);
+        return;
+    }
+    retry_after_disc = false;
+    auth_retry = false;
+    state = ST_IDLE;
+}
 
 static void set_error(const char *msg) {
     snprintf(last_error, sizeof(last_error), "%s", msg);
@@ -162,6 +228,9 @@ static void handle_sdp_event(uint8_t *packet) {
                 printf("bt: no SPP in SDP, falling back to channel %d\n", SPP_FALLBACK_CHANNEL);
                 spp_channel = SPP_FALLBACK_CHANNEL;
             }
+            if (retry_after_disc) {
+                break;
+            }
             open_rfcomm(spp_channel);
             break;
         }
@@ -259,11 +328,63 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 begin_sdp();
             }
             break;
+        case HCI_EVENT_CONNECTION_COMPLETE: {
+            uint8_t status = hci_event_connection_complete_get_status(packet);
+            bd_addr_t addr;
+            hci_event_connection_complete_get_bd_addr(packet, addr);
+            if (status == ERROR_CODE_SUCCESS) {
+                acl_handle = hci_event_connection_complete_get_connection_handle(packet);
+                printf("bt: ACL up handle 0x%04x %s\n", acl_handle, bd_addr_to_str(addr));
+            } else {
+                acl_handle = HCI_CON_HANDLE_INVALID;
+                printf("bt: ACL failed 0x%02x %s\n", status, bd_addr_to_str(addr));
+                if (state == ST_CONNECTING) {
+                    connect_failed(status);
+                }
+            }
+            break;
+        }
+        case HCI_EVENT_DISCONNECTION_COMPLETE: {
+            uint8_t reason = hci_event_disconnection_complete_get_reason(packet);
+            printf("bt: ACL down reason 0x%02x\n", reason);
+            acl_handle = HCI_CON_HANDLE_INVALID;
+            rfcomm_cid = 0;
+            rfcomm_mtu = 0;
+            pending_battery_query = false;
+            tx_len = 0;
+            tx_off = 0;
+            if (retry_after_disc && state == ST_CONNECTING) {
+                retry_after_disc = false;
+                open_rfcomm(spp_channel ? spp_channel : SPP_FALLBACK_CHANNEL);
+                break;
+            }
+            if (state == ST_CONNECTED || state == ST_CONNECTING) {
+                state = ST_IDLE;
+            }
+            break;
+        }
+        case HCI_EVENT_AUTHENTICATION_COMPLETE: {
+            uint8_t status = hci_event_authentication_complete_get_status(packet);
+            printf("bt: authentication complete 0x%02x\n", status);
+            if (status && state == ST_CONNECTING) {
+                connect_failed(status);
+            }
+            break;
+        }
+        case HCI_EVENT_SIMPLE_PAIRING_COMPLETE: {
+            uint8_t status = hci_event_simple_pairing_complete_get_status(packet);
+            printf("bt: SSP complete 0x%02x\n", status);
+            if (status && state == ST_CONNECTING) {
+                connect_failed(status);
+            }
+            break;
+        }
         case HCI_EVENT_PIN_CODE_REQUEST: {
             bd_addr_t addr;
             hci_event_pin_code_request_get_bd_addr(packet, addr);
-            printf("bt: PIN request %s -> 0000\n", bd_addr_to_str(addr));
-            gap_pin_code_response(addr, "0000");
+            const char *pin = pin_alt ? "1234" : "0000";
+            printf("bt: PIN request %s -> %s\n", bd_addr_to_str(addr), pin);
+            gap_pin_code_response(addr, pin);
             break;
         }
         case HCI_EVENT_USER_CONFIRMATION_REQUEST: {
@@ -273,29 +394,34 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             gap_ssp_confirmation_response(addr);
             break;
         }
+        case HCI_EVENT_USER_PASSKEY_REQUEST: {
+            bd_addr_t addr;
+            hci_event_user_passkey_request_get_bd_addr(packet, addr);
+            printf("bt: SSP passkey request %s -> 000000\n", bd_addr_to_str(addr));
+            gap_ssp_passkey_response(addr, 0);
+            break;
+        }
         case RFCOMM_EVENT_CHANNEL_OPENED: {
             uint8_t status = rfcomm_event_channel_opened_get_status(packet);
             if (status == ERROR_CODE_SUCCESS) {
                 rfcomm_cid = rfcomm_event_channel_opened_get_rfcomm_cid(packet);
                 rfcomm_mtu = rfcomm_event_channel_opened_get_max_frame_size(packet);
+                acl_handle = rfcomm_event_channel_opened_get_con_handle(packet);
                 state = ST_CONNECTED;
                 last_error[0] = 0;
                 auth_retry = false;
+                retry_after_disc = false;
+                pin_alt = false;
                 printf("bt: RFCOMM open cid %u mtu %u %s\n", rfcomm_cid, rfcomm_mtu,
                        bd_addr_to_str(peer_addr));
                 pending_battery_query = true;
                 rfcomm_request_can_send_now_event(rfcomm_cid);
-            } else if (status == L2CAP_CONNECTION_PIN_OR_LINK_KEY_MISSING && !auth_retry) {
-                printf("bt: missing link key, drop and retry\n");
-                auth_retry = true;
-                gap_drop_link_key_for_bd_addr(peer_addr);
-                open_rfcomm(spp_channel ? spp_channel : SPP_FALLBACK_CHANNEL);
             } else {
-                char msg[64];
-                snprintf(msg, sizeof(msg), "RFCOMM open failed 0x%02x", status);
-                set_error(msg);
-                state = ST_IDLE;
-                rfcomm_cid = 0;
+                hci_con_handle_t h = rfcomm_event_channel_opened_get_con_handle(packet);
+                if (h != HCI_CON_HANDLE_INVALID) {
+                    acl_handle = h;
+                }
+                connect_failed(status);
             }
             break;
         }
@@ -316,6 +442,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             pending_battery_query = false;
             tx_len = 0;
             tx_off = 0;
+            if (retry_after_disc) {
+                break;
+            }
             if (state == ST_CONNECTED || state == ST_CONNECTING) {
                 state = ST_IDLE;
             }
@@ -357,6 +486,8 @@ bool bt_connect(const char *addr) {
     peer_set = true;
     inhibit_auto_connect = false;
     auth_retry = false;
+    retry_after_disc = false;
+    pin_alt = false;
     last_rx[0] = 0;
     printf("bt: connect %s\n", bd_addr_to_str(peer_addr));
     if (state == ST_SCANNING) {
@@ -429,6 +560,8 @@ bool bt_print_job(const uint8_t *data, size_t len) {
 void bt_disconnect(void) {
     inhibit_auto_connect = true;
     sdp_after_inquiry = false;
+    retry_after_disc = false;
+    auth_retry = false;
     pending_battery_query = false;
     tx_len = 0;
     tx_off = 0;
@@ -535,8 +668,13 @@ void bt_core_init(void) {
     hci_add_event_handler(&hci_event_cb);
     gap_set_local_name("PM220 Pico");
     gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
+    gap_ssp_set_authentication_requirement(
+        SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
+    gap_ssp_set_auto_accept(1);
+    gap_set_required_encryption_key_size(7);
     gap_set_bondable_mode(1);
     gap_discoverable_control(0);
     gap_connectable_control(1);
+    acl_handle = HCI_CON_HANDLE_INVALID;
     hci_power_control(HCI_POWER_ON);
 }
