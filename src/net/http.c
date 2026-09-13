@@ -519,7 +519,10 @@ static int dispatch(struct tcp_pcb *tpcb, http_conn_t *c, const char *method, co
         return http_reply(tpcb, 200, "application/json", json_buf);
     }
     if (path_is(path, "/api/wifi/scan") && strcmp(method, "POST") == 0) {
-        wifi_request_scan();
+        if (wifi_request_scan() < 0) {
+            return http_reply(tpcb, 409, "application/json",
+                              "{\"ok\":false,\"error\":\"printer not connected\",\"scanning\":false}");
+        }
         return http_reply(tpcb, 202, "application/json", "{\"ok\":true,\"scanning\":true}");
     }
     if (path_is(path, "/api/wifi/networks") && strcmp(method, "GET") == 0) {
@@ -532,6 +535,10 @@ static int dispatch(struct tcp_pcb *tpcb, http_conn_t *c, const char *method, co
         if (!json_str_field(body, "ssid", ssid, sizeof(ssid))) {
             return http_reply(tpcb, 400, "application/json",
                               "{\"ok\":false,\"error\":\"ssid required\"}");
+        }
+        if (!bt_is_connected()) {
+            return http_reply(tpcb, 409, "application/json",
+                              "{\"ok\":false,\"error\":\"printer not connected\"}");
         }
         int err;
         if (json_str_field(body, "password", pass, sizeof(pass))) {

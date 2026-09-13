@@ -21,9 +21,8 @@ int wifi_set_mdns(const char *name);
 int wifi_set_ap_creds(const char *ssid, const char *password);
 int wifi_force_ap(void);
 
-/* Pause SoftAP and block Wi-Fi scans/joins while Classic BT pages or inquires.
- * After SPP is up the AP comes back; the CYW43439 PTA can share the radio then.
- * Paging still needs the AP down or HCI 0x04 is common. */
+/* Pause SoftAP while Classic BT pages or inquires. STA scan/join only after
+ * SPP is up; a printer drop tears down STA so the next page has the radio. */
 void wifi_bt_radio_hold(bool hold);
 
 #endif

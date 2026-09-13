@@ -106,6 +106,9 @@ export function bindWifiSettings({ setStatus }) {
         if (st.connecting) {
             parts.push("joining");
         }
+        if (st.printer_connected === false) {
+            parts.push("wait for printer");
+        }
         if (st.last_error) {
             parts.push(st.last_error);
         }
@@ -130,6 +133,7 @@ export function bindWifiSettings({ setStatus }) {
         };
         startApBtn.hidden = st.mode === "ap";
         scanWarn.hidden = !(st.scan_disturbs_ap && st.mode === "ap");
+        $("wifi-scan-btn").disabled = st.printer_connected === false;
         updateSave();
     }
 
@@ -146,6 +150,7 @@ export function bindWifiSettings({ setStatus }) {
             $("wifi-live").textContent = liveLine(st);
             startApBtn.hidden = st.mode === "ap";
             scanWarn.hidden = !(st.scan_disturbs_ap && st.mode === "ap");
+            $("wifi-scan-btn").disabled = st.printer_connected === false;
             if (!dirty()) {
                 fillFromStatus(st);
             }
@@ -254,6 +259,9 @@ export function bindWifiSettings({ setStatus }) {
         for (const ap of aps) {
             scanList.appendChild(scanRow(ap));
         }
+        scanEmpty.textContent = (live && live.printer_connected === false)
+            ? "Connect the printer before scanning."
+            : "No networks found.";
         scanEmpty.hidden = aps.length > 0 || data.scanning;
         if (data.scanning) {
             scanEmpty.hidden = true;
@@ -262,6 +270,10 @@ export function bindWifiSettings({ setStatus }) {
 
     async function runScan() {
         if (scanning) {
+            return;
+        }
+        if (live && live.printer_connected === false) {
+            showErr(errEl, "Connect the printer before scanning.");
             return;
         }
         scanning = true;

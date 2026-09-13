@@ -73,6 +73,7 @@ static char pending_ssid[WIFI_SSID_MAX + 1];
 static char pending_pass[WIFI_PSK_MAX + 1];
 static bool pending_join;
 static bool pending_scan;
+static bool user_scan;
 static bool pending_ap;
 static bool dirty_known;
 static bool dirty_config;
@@ -87,6 +88,7 @@ static uint32_t last_log;
 static char last_error[48];
 static bool bt_hold;
 static bool bt_hold_resume_ap;
+static bool bt_was_connected;
 
 static scan_ap_t scan_aps[WIFI_SCAN_MAX];
 static int scan_n;
@@ -455,16 +457,36 @@ static int scan_cb(void *env, const cyw43_ev_scan_result_t *r) {
     return 0;
 }
 
+static bool bt_paging(void) {
+    return bt_hold || bt_is_connecting() || bt_is_scanning();
+}
+
+/* Scans and STA joins wait until Classic SPP is up so they don't starve paging. */
+static bool wifi_sta_allowed(void) {
+    return bt_is_connected() && !bt_paging();
+}
+
+static void drop_sta_printer_lost(void) {
+    pending_scan = false;
+    user_scan = false;
+    pending_join = false;
+    connecting = false;
+    scan_done = false;
+    if (state == ST_STA || state == ST_JOIN) {
+        printf("wifi: printer lost, leaving STA\n");
+        start_ap();
+    }
+}
+
 static void begin_scan(void) {
-    if (bt_hold || bt_is_connected() || bt_is_connecting() || state == ST_JOIN || connecting) {
-        if (bt_hold || bt_is_connected() || bt_is_connecting()) {
-            pending_scan = true;
-        }
+    if (state == ST_JOIN || !wifi_sta_allowed()) {
+        pending_scan = true;
         return;
     }
     if (cyw43_wifi_scan_active(&cyw43_state)) {
         return;
     }
+    user_scan = false;
     scan_n = 0;
     scan_done = false;
     scanning = true;
@@ -560,8 +582,7 @@ void wifi_init(void) {
     last_period_scan = boot_start;
     if (known_n > 0) {
         state = ST_BOOT;
-        begin_scan();
-        printf("wifi: %d known, searching 60s\n", known_n);
+        printf("wifi: %d known, wait for printer then scan\n", known_n);
     } else {
         start_ap();
     }
@@ -569,6 +590,11 @@ void wifi_init(void) {
 
 void wifi_poll(void) {
     uint32_t now = to_ms_since_boot(get_absolute_time());
+    bool bt = bt_is_connected();
+    if (bt_was_connected && !bt) {
+        drop_sta_printer_lost();
+    }
+    bt_was_connected = bt;
     if (scanning && !cyw43_wifi_scan_active(&cyw43_state)) {
         scanning = false;
         scan_done = true;
@@ -582,29 +608,30 @@ void wifi_poll(void) {
         dirty_config = false;
         persist_config();
     }
-    if (pending_ap && !bt_hold && !bt_is_connecting() && !bt_is_scanning()) {
+    if (pending_ap && !bt_paging() && !bt_is_scanning()) {
         pending_ap = false;
         pending_join = false;
         start_ap();
     }
-    if (pending_join && !bt_hold && !bt_is_connected() && !bt_is_connecting() &&
-        !cyw43_wifi_scan_active(&cyw43_state) && !scanning) {
-        pending_join = false;
-        begin_join(pending_ssid, pending_pass);
-    }
-    if (pending_scan && !bt_hold && !bt_is_connected() && state != ST_JOIN && !connecting &&
-        !bt_is_connecting()) {
+    if (pending_scan && wifi_sta_allowed() && state != ST_JOIN) {
         pending_scan = false;
         begin_scan();
+    }
+    if (pending_join && wifi_sta_allowed() && !cyw43_wifi_scan_active(&cyw43_state) && !scanning) {
+        pending_join = false;
+        begin_join(pending_ssid, pending_pass);
     }
 
     if (state == ST_BOOT && !bt_hold && timed_out(now, boot_start, WIFI_BOOT_MS)) {
         start_ap();
-    } else if (state == ST_BOOT && !bt_hold && !bt_is_connected() && !bt_is_connecting() &&
-               scan_done && !pending_join) {
-        const known_t *k = known_in_scan();
-        if (k) {
-            begin_join(k->ssid, k->password);
+    } else if (state == ST_BOOT && wifi_sta_allowed() && !pending_join) {
+        if (scan_done) {
+            const known_t *k = known_in_scan();
+            if (k) {
+                begin_join(k->ssid, k->password);
+            } else if (!scanning) {
+                begin_scan();
+            }
         } else if (!scanning) {
             begin_scan();
         }
@@ -662,14 +689,14 @@ void wifi_poll(void) {
         }
     }
 
-    if (state == ST_AP && !bt_hold && scan_allowed_periodic() && !scanning && !pending_join &&
-        !bt_is_connecting() && !bt_is_connected() &&
+    if (state == ST_AP && wifi_sta_allowed() && scan_allowed_periodic() && !scanning &&
+        !pending_join &&
         (scan_soon || timed_out(now, last_period_scan, WIFI_PERIOD_MS))) {
         scan_soon = false;
         last_period_scan = now;
         begin_scan();
     }
-    if (state == ST_AP && !bt_hold && !bt_is_connected() && !bt_is_connecting() &&
+    if (state == ST_AP && wifi_sta_allowed() &&
         scan_done && !scanning && !pending_join &&
         timed_out(now, last_join_fail, WIFI_JOIN_BACKOFF_MS)) {
         scan_done = false;
@@ -720,9 +747,10 @@ void wifi_status_json(char *buf, size_t cap) {
              "{\"ok\":true,\"mode\":\"%s\",\"mdns\":\"%s\",\"ap_ssid\":\"%s\","
              "\"ap_password\":\"%s\",\"sta_ssid\":\"%s\",\"ip\":\"%s\",\"scan\":\"%s\","
              "\"scan_disturbs_ap\":true,\"ap_clients\":%d,\"connecting\":%s,"
-             "\"last_error\":\"%s\"}",
+             "\"printer_connected\":%s,\"last_error\":\"%s\"}",
              mode, mdns_e, ap_e, pass_e, sta_e, ip, policy_str(policy),
-             ap_client_count(), connecting ? "true" : "false", err_e);
+             ap_client_count(), connecting ? "true" : "false",
+             bt_is_connected() ? "true" : "false", err_e);
 }
 
 static const char *auth_name(uint8_t a) {
@@ -741,7 +769,7 @@ static const char *auth_name(uint8_t a) {
 void wifi_scan_json(char *buf, size_t cap) {
     size_t n = 0;
     n += (size_t)snprintf(buf + n, cap - n, "{\"scanning\":%s,\"aps\":[",
-                          scanning ? "true" : "false");
+                          (scanning || pending_scan) ? "true" : "false");
     for (int i = 0; i < scan_n && n + 80 < cap; i++) {
         char se[WIFI_SSID_MAX * 2 + 4];
         json_esc(se, sizeof(se), scan_aps[i].ssid);
@@ -769,7 +797,11 @@ void wifi_networks_json(char *buf, size_t cap) {
 }
 
 int wifi_request_scan(void) {
+    if (!bt_is_connected()) {
+        return -1;
+    }
     pending_scan = true;
+    user_scan = true;
     return 0;
 }
 
