@@ -294,15 +294,13 @@ export function wifiForceAp() {
     return fsJson("/api/wifi/ap", { method: "POST" });
 }
 
-export async function downloadFsBlob(name, filename) {
-    const r = await fetch(apiBase() + "/api/fs/" + name);
-    if (!r.ok) {
-        throw new Error(`${name} ${r.status}`);
-    }
-    const blob = await r.blob();
+export function downloadFsBlob(name, filename) {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
+    a.href = apiBase() + "/api/fs/" + name;
+    a.download = filename || name.split("/").pop() || "download";
+    a.rel = "noopener";
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    setTimeout(() => a.remove(), 1000);
 }

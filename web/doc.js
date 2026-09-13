@@ -79,8 +79,14 @@ export function downloadDocument(doc, name) {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = name || "label.pm220.json";
+    a.rel = "noopener";
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+    }, 1000);
 }
 
 export function readLabelFile(file) {

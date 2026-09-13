@@ -247,6 +247,16 @@ export function bindCalibrate({ setStatus, applyMedia }) {
             close();
         }
     });
+    const fieldIds = [
+        "cal-offx", "cal-offy", "cal-gap", "cal-ox", "cal-oy", "cal-ph",
+        "cal-sx0", "cal-sy0", "cal-sx1", "cal-sy1",
+    ];
+    const actionIds = ["cal-test", "cal-reset", "cal-save", "cal-close"];
+
+    function calFocusables() {
+        return [...fieldIds, ...actionIds].map($).filter(Boolean);
+    }
+
     document.addEventListener("keydown", (e) => {
         if (overlay.hidden) {
             return;
@@ -254,6 +264,46 @@ export function bindCalibrate({ setStatus, applyMedia }) {
         if (e.key === "Escape") {
             e.preventDefault();
             close();
+            return;
+        }
+        const mod = e.ctrlKey || e.metaKey;
+        if (mod && !e.altKey && e.key.toLowerCase() === "s") {
+            e.preventDefault();
+            save();
+            return;
+        }
+        if (e.key === "Tab") {
+            e.preventDefault();
+            const els = calFocusables();
+            const i = els.indexOf(document.activeElement);
+            const n = els.length;
+            let next;
+            if (i < 0) {
+                next = e.shiftKey ? n - 1 : 0;
+            } else {
+                next = e.shiftKey ? (i - 1 + n) % n : (i + 1) % n;
+            }
+            els[next].focus();
+            if (els[next].select) {
+                els[next].select();
+            }
+            return;
+        }
+        const onActions = actionIds.includes(e.target && e.target.id);
+        const right = e.key === "ArrowRight" || e.key === "l" || e.key === "ArrowDown" || e.key === "j";
+        const left = e.key === "ArrowLeft" || e.key === "h" || e.key === "ArrowUp" || e.key === "k";
+        if (onActions && (right || left)) {
+            e.preventDefault();
+            const els = actionIds.map($).filter(Boolean);
+            const i = Math.max(0, els.indexOf(e.target));
+            const n = els.length;
+            const next = right ? (i + 1) % n : (i - 1 + n) % n;
+            els[next].focus();
+            return;
+        }
+        if (e.key === "Enter" && e.target && e.target.tagName === "INPUT") {
+            e.preventDefault();
+            save();
         }
     });
 

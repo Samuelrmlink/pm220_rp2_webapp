@@ -43,6 +43,11 @@ export function bindWifiSettings({ setStatus }) {
     let subOk = null;
     let wifiEpoch = 0;
     let wifiAbort = null;
+    let wifiTab = "mdns";
+    let wifiListIndex = 0;
+    let fieldIndex = 0;
+    let knownActionIndex = 0;
+    const TAB_ORDER = ["mdns", "ap", "sta"];
 
     function wifiLive() {
         return !overlay.hidden;
@@ -82,12 +87,154 @@ export function bindWifiSettings({ setStatus }) {
     }
 
     function setTab(name) {
+        wifiTab = name;
         for (const btn of overlay.querySelectorAll(".wifi-tab")) {
             btn.setAttribute("aria-selected", btn.dataset.tab === name ? "true" : "false");
+            btn.tabIndex = -1;
         }
         $("wifi-pane-mdns").hidden = name !== "mdns";
         $("wifi-pane-ap").hidden = name !== "ap";
         $("wifi-pane-sta").hidden = name !== "sta";
+        paintWifiField();
+    }
+
+    function wifiFields() {
+        const f = [{ kind: "tabs" }];
+        if (wifiTab === "mdns") {
+            f.push({ kind: "el", id: "wifi-mdns" });
+        } else if (wifiTab === "ap") {
+            f.push({ kind: "el", id: "wifi-ap-ssid" });
+            f.push({ kind: "el", id: "wifi-ap-psk" });
+            f.push({ kind: "el", id: "wifi-scan-policy" });
+            if (!$("wifi-start-ap").hidden) {
+                f.push({ kind: "el", id: "wifi-start-ap" });
+            }
+        } else {
+            f.push({ kind: "el", id: "wifi-scan-btn" });
+            if (stationRows().length) {
+                f.push({ kind: "list" });
+            }
+            if (!knownActions.hidden) {
+                f.push({ kind: "known-actions" });
+            }
+        }
+        if (!saveBtn.hidden) {
+            f.push({ kind: "el", id: "wifi-save" });
+        }
+        f.push({ kind: "el", id: "wifi-close" });
+        return f;
+    }
+
+    function clearWifiNav() {
+        overlay.querySelector(".wifi-tabs")?.classList.remove("nav");
+        overlay.querySelectorAll(".nav-field, .picker-actions button.nav, .wifi-known-actions button.nav")
+            .forEach((el) => el.classList.remove("nav-field", "nav"));
+        stationRows().forEach((li) => li.classList.remove("current"));
+    }
+
+    function paintWifiField() {
+        const fields = wifiFields();
+        if (!fields.length) {
+            return;
+        }
+        if (fieldIndex < 0) {
+            fieldIndex = 0;
+        }
+        if (fieldIndex >= fields.length) {
+            fieldIndex = fields.length - 1;
+        }
+        const cur = fields[fieldIndex];
+        clearWifiNav();
+        const tabs = overlay.querySelector(".wifi-tabs");
+        if (cur.kind === "tabs") {
+            tabs.classList.add("nav");
+            overlay.querySelector(".picker-panel")?.focus();
+            return;
+        }
+        if (cur.kind === "list") {
+            paintWifiCurrent();
+            overlay.querySelector(".picker-panel")?.focus();
+            return;
+        }
+        if (cur.kind === "known-actions") {
+            const btns = [...knownActions.querySelectorAll("button")];
+            if (knownActionIndex >= btns.length) {
+                knownActionIndex = Math.max(0, btns.length - 1);
+            }
+            btns[knownActionIndex]?.classList.add("nav");
+            overlay.querySelector(".picker-panel")?.focus();
+            return;
+        }
+        const el = $(cur.id);
+        if (!el) {
+            return;
+        }
+        el.classList.add(el.closest(".picker-actions") ? "nav" : "nav-field");
+        el.focus();
+        if (el.tagName === "INPUT" && el.select) {
+            el.select();
+        }
+    }
+
+    function moveWifiField(delta) {
+        const fields = wifiFields();
+        if (!fields.length) {
+            return;
+        }
+        fieldIndex = (fieldIndex + delta + fields.length) % fields.length;
+        paintWifiField();
+    }
+
+    function typingIn(el) {
+        if (!el) {
+            return false;
+        }
+        const tag = el.tagName;
+        if (tag === "TEXTAREA") {
+            return true;
+        }
+        if (tag === "SELECT") {
+            return true;
+        }
+        if (tag === "INPUT" && el.type !== "button" && el.type !== "checkbox") {
+            return true;
+        }
+        return false;
+    }
+
+    function stationRows() {
+        return [...scanList.children, ...knownList.children];
+    }
+
+    function paintWifiCurrent() {
+        const rows = stationRows();
+        if (!rows.length) {
+            return;
+        }
+        if (wifiListIndex < 0) {
+            wifiListIndex = 0;
+        }
+        if (wifiListIndex >= rows.length) {
+            wifiListIndex = rows.length - 1;
+        }
+        rows.forEach((li, i) => li.classList.toggle("current", i === wifiListIndex));
+        rows[wifiListIndex]?.scrollIntoView({ block: "nearest" });
+    }
+
+    function moveWifiCurrent(delta) {
+        const rows = stationRows();
+        if (!rows.length) {
+            return;
+        }
+        wifiListIndex = (wifiListIndex + delta + rows.length) % rows.length;
+        paintWifiCurrent();
+    }
+
+    function activateWifiCurrent() {
+        const row = stationRows()[wifiListIndex];
+        if (row) {
+            row.click();
+        }
     }
 
     function liveLine(st) {
@@ -217,6 +364,7 @@ export function bindWifiSettings({ setStatus }) {
             }
             knownEmpty.hidden = nets.length > 0;
             paintKnownSelection();
+            paintWifiCurrent();
         } catch (err) {
             showErr(errEl, String(err.message || err));
         }
@@ -259,6 +407,8 @@ export function bindWifiSettings({ setStatus }) {
         for (const ap of aps) {
             scanList.appendChild(scanRow(ap));
         }
+        wifiListIndex = 0;
+        paintWifiCurrent();
         scanEmpty.textContent = (live && live.printer_connected === false)
             ? "Connect the printer before scanning."
             : "No networks found.";
@@ -406,17 +556,23 @@ export function bindWifiSettings({ setStatus }) {
         showErr(errEl, "");
         selectedKnown = "";
         overlay.hidden = false;
+        overlay.querySelector(".picker-panel").setAttribute("tabindex", "-1");
+        fieldIndex = 0;
+        knownActionIndex = 0;
+        wifiListIndex = 0;
         if (wifiAbort) {
             wifiAbort.abort();
         }
         wifiAbort = new AbortController();
         setTab("mdns");
+        paintWifiField();
         try {
             const st = await getWifi({ signal: wifiSignal() });
             if (epoch !== wifiEpoch || !wifiLive()) {
                 return;
             }
             fillFromStatus(st);
+            paintWifiField();
         } catch (err) {
             if (err && err.name === "AbortError") {
                 return;
@@ -472,7 +628,10 @@ export function bindWifiSettings({ setStatus }) {
     }
 
     for (const btn of overlay.querySelectorAll(".wifi-tab")) {
-        btn.addEventListener("click", () => setTab(btn.dataset.tab));
+        btn.addEventListener("click", () => {
+            fieldIndex = 0;
+            setTab(btn.dataset.tab);
+        });
     }
     $("wifi-mdns").addEventListener("input", () => {
         $("wifi-mdns-hint").textContent =
@@ -585,17 +744,86 @@ export function bindWifiSettings({ setStatus }) {
         }
     });
     document.addEventListener("keydown", (e) => {
-        if (e.key !== "Escape") {
-            return;
-        }
         if (!sub.hidden) {
-            e.preventDefault();
-            closeSub();
+            if (e.key === "Escape") {
+                e.preventDefault();
+                closeSub();
+            } else if (e.key === "Enter" && e.target !== $("wifi-sub-cancel")) {
+                e.preventDefault();
+                $("wifi-sub-ok").click();
+            }
             return;
         }
-        if (!overlay.hidden) {
+        if (overlay.hidden) {
+            return;
+        }
+        if (e.key === "Escape") {
             e.preventDefault();
             close();
+            return;
+        }
+        const mod = e.ctrlKey || e.metaKey;
+        if (mod && !e.altKey && e.key.toLowerCase() === "s") {
+            e.preventDefault();
+            if (!saveBtn.hidden) {
+                saveSettings();
+            }
+            return;
+        }
+        if (e.key === "Tab") {
+            e.preventDefault();
+            moveWifiField(e.shiftKey ? -1 : 1);
+            return;
+        }
+        const fields = wifiFields();
+        const cur = fields[fieldIndex] || { kind: "tabs" };
+        const right = e.key === "ArrowRight" || e.key === "l";
+        const left = e.key === "ArrowLeft" || e.key === "h";
+        const down = e.key === "ArrowDown" || e.key === "j";
+        const up = e.key === "ArrowUp" || e.key === "k";
+        if (cur.kind === "tabs" && (right || left || down || up)) {
+            e.preventDefault();
+            const i = TAB_ORDER.indexOf(wifiTab);
+            const n = TAB_ORDER.length;
+            const next = (right || down) ? (i + 1) % n : (i - 1 + n) % n;
+            setTab(TAB_ORDER[next]);
+            return;
+        }
+        if (cur.kind === "list" && (right || left || down || up)) {
+            e.preventDefault();
+            moveWifiCurrent(right || down ? 1 : -1);
+            return;
+        }
+        if (cur.kind === "known-actions" && (right || left || down || up)) {
+            e.preventDefault();
+            const btns = [...knownActions.querySelectorAll("button")];
+            const n = btns.length;
+            if (n) {
+                knownActionIndex = (knownActionIndex + (right || down ? 1 : n - 1)) % n;
+                paintWifiField();
+            }
+            return;
+        }
+        if (cur.kind === "el" && (right || left || down || up) && !typingIn(e.target)) {
+            e.preventDefault();
+            moveWifiField(right || down ? 1 : -1);
+            return;
+        }
+        if (typingIn(e.target)) {
+            return;
+        }
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (cur.kind === "list") {
+                activateWifiCurrent();
+            } else if (cur.kind === "known-actions") {
+                knownActions.querySelectorAll("button")[knownActionIndex]?.click();
+            } else if (cur.kind === "el") {
+                const el = $(cur.id);
+                if (el && el.tagName === "BUTTON") {
+                    el.click();
+                }
+            }
         }
     });
 

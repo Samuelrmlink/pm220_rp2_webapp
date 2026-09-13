@@ -59,9 +59,14 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
     const nameEl = $("picker-name");
     const saveRow = $("picker-save-row");
     const saveBtn = $("picker-save");
-    const pcBtn = $("picker-pc");
+    const pcOpen = $("picker-pc-open");
+    const pcSave = $("picker-pc-save");
     let mode = "open";
     let files = [];
+    let listIndex = 0;
+    let rowCol = 0;
+    let region = "list";
+    let actionIndex = 0;
 
     function showErr(msg) {
         if (!msg) {
@@ -92,6 +97,102 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
         for (const info of files) {
             listEl.appendChild(rowEl(info));
         }
+        if (listIndex >= files.length) {
+            listIndex = Math.max(0, files.length - 1);
+        }
+        paintCurrent();
+    }
+
+    function listItems() {
+        return [...listEl.querySelectorAll("li")];
+    }
+
+    function rowButtons(li) {
+        if (!li) {
+            return [];
+        }
+        return [
+            li.querySelector(".picker-file"),
+            ...li.querySelectorAll(".picker-row-actions button"),
+        ].filter(Boolean);
+    }
+
+    function paintCurrent() {
+        const items = listItems();
+        items.forEach((li, i) => {
+            const onRow = region === "list" && i === listIndex;
+            li.classList.toggle("current", onRow);
+            rowButtons(li).forEach((b, c) => b.classList.toggle("nav", onRow && c === rowCol));
+        });
+        if (region === "list") {
+            items[listIndex]?.scrollIntoView({ block: "nearest" });
+        }
+        const actions = actionButtons();
+        if (actionIndex >= actions.length) {
+            actionIndex = Math.max(0, actions.length - 1);
+        }
+        actions.forEach((b, i) => b.classList.toggle("nav", region === "actions" && i === actionIndex));
+    }
+
+    function moveCurrent(delta) {
+        const items = listItems();
+        if (!items.length) {
+            return;
+        }
+        listIndex = (listIndex + delta + items.length) % items.length;
+        const n = rowButtons(items[listIndex]).length;
+        if (rowCol >= n) {
+            rowCol = Math.max(0, n - 1);
+        }
+        paintCurrent();
+    }
+
+    function moveRowCol(delta) {
+        const btns = rowButtons(listItems()[listIndex]);
+        if (!btns.length) {
+            return;
+        }
+        rowCol = (rowCol + delta + btns.length) % btns.length;
+        paintCurrent();
+    }
+
+    function activateCurrent() {
+        if (region === "actions") {
+            actionButtons()[actionIndex]?.click();
+            return;
+        }
+        const btn = rowButtons(listItems()[listIndex])[rowCol];
+        if (btn) {
+            btn.click();
+        }
+    }
+
+    function setRegion(next) {
+        region = next;
+        if (next === "actions") {
+            actionIndex = 0;
+        } else {
+            rowCol = 0;
+        }
+        paintCurrent();
+    }
+
+    function actionButtons() {
+        return [...overlay.querySelector(".picker-actions").children].filter((el) => !el.hidden && !el.disabled);
+    }
+
+    function typingIn(el) {
+        if (!el) {
+            return false;
+        }
+        const tag = el.tagName;
+        if (tag === "TEXTAREA") {
+            return true;
+        }
+        if (tag === "INPUT" && el.type !== "button" && el.type !== "checkbox") {
+            return true;
+        }
+        return false;
     }
 
     function rowEl(info) {
@@ -100,8 +201,15 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
         const nameBtn = document.createElement("button");
         nameBtn.type = "button";
         nameBtn.className = "picker-file";
+        nameBtn.tabIndex = -1;
         nameBtn.textContent = shown;
         nameBtn.addEventListener("click", () => {
+            const items = listItems();
+            const idx = items.indexOf(li);
+            if (idx >= 0) {
+                listIndex = idx;
+                paintCurrent();
+            }
             if (mode === "save") {
                 nameEl.value = shown;
                 nameEl.focus();
@@ -116,17 +224,19 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
         actions.className = "picker-row-actions";
         const dl = document.createElement("button");
         dl.type = "button";
+        dl.tabIndex = -1;
         dl.textContent = "Download";
-        dl.addEventListener("click", async (e) => {
+        dl.addEventListener("click", (e) => {
             e.stopPropagation();
             try {
-                await downloadFsBlob(`${DIR}/${info.name}`, shown);
+                downloadFsBlob(`${DIR}/${info.name}`, shown);
             } catch (err) {
                 showErr(String(err.message || err));
             }
         });
         const ren = document.createElement("button");
         ren.type = "button";
+        ren.tabIndex = -1;
         ren.textContent = "Rename";
         ren.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -134,6 +244,7 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
         });
         const del = document.createElement("button");
         del.type = "button";
+        del.tabIndex = -1;
         del.textContent = "Delete";
         del.addEventListener("click", async (e) => {
             e.stopPropagation();
@@ -216,23 +327,46 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
         }
     }
 
+    async function writeNamed(display, { confirmReplace, closeAfter }) {
+        const text = JSON.stringify(getDoc());
+        const gz = await gzipUtf8(text);
+        const path = storedPath(display, !!gz);
+        const shown = displayName(path.split("/").pop());
+        if (confirmReplace) {
+            const exists = files.some((f) => displayName(f.name) === shown);
+            if (exists && !confirm(`Replace ${shown}?`)) {
+                return false;
+            }
+        }
+        await putFs(path, gz || text);
+        setPicoName(shown);
+        if (closeAfter) {
+            close();
+        }
+        setStatus(`saved ${shown}`, "ok");
+        return true;
+    }
+
     async function saveToPico() {
         showErr("");
         try {
-            const text = JSON.stringify(getDoc());
-            const gz = await gzipUtf8(text);
-            const path = storedPath(nameEl.value, !!gz);
-            const shown = displayName(path.split("/").pop());
-            const exists = files.some((f) => displayName(f.name) === shown);
-            if (exists && !confirm(`Replace ${shown}?`)) {
-                return;
-            }
-            await putFs(path, gz || text);
-            setPicoName(shown);
-            close();
-            setStatus(`saved ${shown}`, "ok");
+            await writeNamed(nameEl.value, { confirmReplace: true, closeAfter: true });
         } catch (err) {
             showErr(String(err.message || err));
+        }
+    }
+
+    async function saveCurrent() {
+        const name = picoName();
+        if (!name) {
+            return false;
+        }
+        try {
+            await writeNamed(name, { confirmReplace: false, closeAfter: false });
+            return true;
+        } catch (err) {
+            setStatus(String(err.message || err), "err");
+            return false;
         }
     }
 
@@ -241,24 +375,27 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
         $("picker-title").textContent = mode === "save" ? "Save label" : "Open label";
         saveRow.hidden = mode !== "save";
         saveBtn.hidden = mode !== "save";
-        pcBtn.textContent = mode === "save" ? "Download current" : "This computer…";
+        pcOpen.hidden = mode === "save";
+        pcSave.hidden = mode !== "save";
         nameEl.value = picoName() || "label.json";
         overlay.hidden = false;
+        listIndex = 0;
+        rowCol = 0;
+        region = "list";
+        actionIndex = 0;
+        overlay.querySelector(".picker-panel").setAttribute("tabindex", "-1");
         if (mode === "save") {
             nameEl.focus();
             nameEl.select();
+        } else {
+            overlay.querySelector(".picker-panel").focus();
         }
         await refresh();
     }
 
-    pcBtn.addEventListener("click", () => {
-        if (mode === "save") {
-            downloadDocument(getDoc());
-            close();
-            return;
-        }
+    pcSave.addEventListener("click", () => {
+        downloadDocument(getDoc(), picoName() || "label.pm220.json");
         close();
-        $("file").click();
     });
     saveBtn.addEventListener("click", () => saveToPico());
     $("picker-cancel").addEventListener("click", () => close());
@@ -274,11 +411,83 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
         if (e.key === "Escape" && e.target.className !== "picker-rename") {
             e.preventDefault();
             close();
+            return;
+        }
+        if (e.key === "Tab") {
+            e.preventDefault();
+            if (e.shiftKey) {
+                if (region === "actions") {
+                    setRegion("list");
+                    overlay.querySelector(".picker-panel").focus();
+                } else if (mode === "save" && document.activeElement !== nameEl) {
+                    nameEl.focus();
+                    nameEl.select();
+                } else {
+                    setRegion("actions");
+                }
+            } else if (region === "list" && document.activeElement !== nameEl) {
+                if (mode === "save") {
+                    nameEl.focus();
+                    nameEl.select();
+                } else {
+                    setRegion("actions");
+                }
+            } else {
+                nameEl.blur();
+                setRegion("actions");
+            }
+            return;
+        }
+        if (typingIn(e.target)) {
+            if (e.target === nameEl && mode === "save" && e.key === "Enter") {
+                e.preventDefault();
+                saveToPico();
+            }
+            return;
+        }
+        const right = e.key === "ArrowRight" || e.key === "l";
+        const left = e.key === "ArrowLeft" || e.key === "h";
+        const down = e.key === "ArrowDown" || e.key === "j";
+        const up = e.key === "ArrowUp" || e.key === "k";
+        if (right || left) {
+            e.preventDefault();
+            if (region === "actions") {
+                const n = actionButtons().length;
+                if (n) {
+                    actionIndex = (actionIndex + (right ? 1 : n - 1)) % n;
+                    paintCurrent();
+                }
+            } else {
+                moveRowCol(right ? 1 : -1);
+            }
+            return;
+        }
+        if (down || up) {
+            e.preventDefault();
+            if (region === "actions") {
+                const n = actionButtons().length;
+                if (n) {
+                    actionIndex = (actionIndex + (down ? 1 : n - 1)) % n;
+                    paintCurrent();
+                }
+            } else {
+                moveCurrent(down ? 1 : -1);
+            }
+            return;
+        }
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            activateCurrent();
         }
     });
 
     $("open").addEventListener("click", () => open("open"));
     $("save").addEventListener("click", () => open("save"));
 
-    return { isOpen: () => !overlay.hidden };
+    return {
+        isOpen: () => !overlay.hidden,
+        open,
+        close,
+        saveCurrent,
+    };
 }

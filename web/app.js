@@ -899,6 +899,9 @@ const calUi = bindCalibrate({ setStatus, applyMedia });
 $("file").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
+    if (picker && picker.close) {
+        picker.close();
+    }
     if (!file) {
         return;
     }
@@ -921,10 +924,38 @@ document.addEventListener("keydown", (e) => {
         }
         return;
     }
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.altKey && e.key.toLowerCase() === "o") {
+        if (overlayOpen()) {
+            return;
+        }
+        e.preventDefault();
+        picker.open("open");
+        return;
+    }
+    if (mod && !e.altKey && e.key.toLowerCase() === "s") {
+        if (overlayOpen()) {
+            return;
+        }
+        e.preventDefault();
+        if (e.shiftKey || !picoName) {
+            picker.open("save");
+        } else {
+            picker.saveCurrent();
+        }
+        return;
+    }
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p") {
+        if (overlayOpen()) {
+            return;
+        }
+        e.preventDefault();
+        sendPrint();
+        return;
+    }
     if (overlayOpen()) {
         return;
     }
-    const mod = e.ctrlKey || e.metaKey;
     if (mod && !e.altKey && e.key.toLowerCase() === "z") {
         if (isPayloadTyping()) {
             return;
@@ -1256,7 +1287,7 @@ document.addEventListener("visibilitychange", () => {
     scheduleStatus();
 });
 
-$("print").addEventListener("click", async () => {
+async function sendPrint() {
     $("print").disabled = true;
     try {
         paint();
@@ -1268,7 +1299,9 @@ $("print").addEventListener("click", async () => {
         $("print").disabled = false;
         refreshStatus();
     }
-});
+}
+
+$("print").addEventListener("click", () => sendPrint());
 
 async function boot() {
     try {

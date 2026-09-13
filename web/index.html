@@ -26,7 +26,6 @@
         <button type="button" id="undo" disabled>Undo</button>
         <button type="button" id="redo" disabled>Redo</button>
         <button type="button" id="print" class="primary">Print</button>
-        <input id="file" type="file" accept=".json,.pm220.json,application/json" hidden>
         <input id="image-file" type="file" accept="image/png,image/jpeg,image/*" hidden>
         <div class="header-right">
             <button type="button" id="help-btn" aria-label="Keyboard shortcuts">?</button>
@@ -47,9 +46,13 @@
                 <input id="picker-name" type="text" spellcheck="false" autocomplete="off">
             </div>
             <div class="picker-actions">
-                <button type="button" id="picker-pc">This computer…</button>
-                <button type="button" id="picker-save" class="primary">Save</button>
-                <button type="button" id="picker-cancel">Cancel</button>
+                <label id="picker-pc-open" class="picker-pc-label">
+                    This computer…
+                    <input id="file" class="sr-file" type="file" accept=".json,.pm220.json,.json.gz,application/json">
+                </label>
+                <button type="button" id="picker-pc-save" tabindex="-1" hidden>Download current</button>
+                <button type="button" id="picker-save" class="primary" tabindex="-1">Save</button>
+                <button type="button" id="picker-cancel" tabindex="-1">Cancel</button>
             </div>
         </div>
     </div>
@@ -336,6 +339,10 @@
             <div class="help-cols">
                 <section>
                     <h3>Document</h3>
+                    <p><kbd>Ctrl</kbd>+<kbd>O</kbd> Open</p>
+                    <p><kbd>Ctrl</kbd>+<kbd>S</kbd> Save</p>
+                    <p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Save as</p>
+                    <p><kbd>Ctrl</kbd>+<kbd>P</kbd> Print</p>
                     <p><kbd>Ctrl</kbd>+<kbd>Z</kbd> Undo</p>
                     <p><kbd>Ctrl</kbd>+<kbd>X</kbd> Redo</p>
                     <p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> Redo</p>
@@ -365,6 +372,15 @@
                     <p><kbd>Tab</kbd> / <kbd>n</kbd> Next field</p>
                     <p><kbd>N</kbd> Previous field</p>
                     <p>Arrows on numeric fields</p>
+                </section>
+                <section>
+                    <h3>Dialogs</h3>
+                    <p><kbd>Esc</kbd> Close</p>
+                    <p><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> / arrows move</p>
+                    <p><kbd>Enter</kbd> / <kbd>Space</kbd> Activate</p>
+                    <p>Open/Save: <kbd>Tab</kbd> list / buttons; <kbd>h</kbd><kbd>l</kbd> row actions</p>
+                    <p>WiFi: <kbd>Tab</kbd> next field; arrows on tabs change pane</p>
+                    <p>Calibrate: <kbd>Tab</kbd> next field; arrows on footer buttons</p>
                 </section>
                 <section>
                     <h3>Help</h3>
