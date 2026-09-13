@@ -203,9 +203,230 @@ const editor = new Editor($("stage"), {
         fillForm();
         saveScratch();
         markNudgeFocus();
+        updateStageKeys();
+        if (isPayloadTyping()) {
+            clearTimeout(histTypeTimer);
+            histTypeTimer = setTimeout(histRecord, 400);
+        } else {
+            histRecord();
+        }
     },
     onSelect: (box) => focusPayload(box),
 });
+
+const HIST_MAX = 50;
+const history = { past: [], present: null, future: [], applying: false };
+let histHold = false;
+let histTypeTimer = 0;
+
+function isPayloadTyping() {
+    const el = document.activeElement;
+    if (!el) {
+        return false;
+    }
+    if (el.tagName === "TEXTAREA") {
+        return true;
+    }
+    if (el.tagName === "INPUT" && el.type !== "checkbox" && el.type !== "button" && !isNumField(el)) {
+        return true;
+    }
+    return false;
+}
+
+function histSnap() {
+    return JSON.stringify({
+        boxes: editor.boxes,
+        selectedId: editor.selectedId,
+    });
+}
+
+function histBoxesKey(snap) {
+    if (!snap) {
+        return "";
+    }
+    try {
+        return JSON.stringify(JSON.parse(snap).boxes);
+    } catch {
+        return snap;
+    }
+}
+
+function syncHistButtons() {
+    const undo = $("undo");
+    const redo = $("redo");
+    if (undo) {
+        undo.disabled = history.past.length === 0;
+    }
+    if (redo) {
+        redo.disabled = history.future.length === 0;
+    }
+}
+
+function histRecord() {
+    if (history.applying || editor.drag || histHold) {
+        return;
+    }
+    const snap = histSnap();
+    if (histBoxesKey(snap) === histBoxesKey(history.present)) {
+        history.present = snap;
+        return;
+    }
+    if (history.present != null) {
+        history.past.push(history.present);
+        if (history.past.length > HIST_MAX) {
+            history.past.shift();
+        }
+    }
+    history.present = snap;
+    history.future = [];
+    syncHistButtons();
+}
+
+function histApply(snap) {
+    const data = JSON.parse(snap);
+    history.applying = true;
+    editor.load(data.boxes);
+    if (data.selectedId != null) {
+        editor.select(data.selectedId);
+    }
+    history.applying = false;
+}
+
+function histUndo() {
+    if (!history.past.length) {
+        return;
+    }
+    history.future.push(histSnap());
+    history.present = history.past.pop();
+    histApply(history.present);
+    syncHistButtons();
+}
+
+function histRedo() {
+    if (!history.future.length) {
+        return;
+    }
+    history.past.push(histSnap());
+    history.present = history.future.pop();
+    histApply(history.present);
+    syncHistButtons();
+}
+
+function histReset() {
+    history.past = [];
+    history.future = [];
+    history.present = histSnap();
+    syncHistButtons();
+}
+
+function histBeginHold() {
+    histHold = true;
+}
+
+function histEndHold() {
+    if (!histHold) {
+        return;
+    }
+    histHold = false;
+    histRecord();
+}
+
+function rotationPatch(box, next) {
+    const patch = { rotate: next };
+    if (rotateSwapsAxes(next) !== rotateSwapsAxes(box.rotate)) {
+        patch.width = box.height;
+        patch.height = box.width;
+    }
+    return patch;
+}
+
+function cycleRotation() {
+    const box = editor.selected();
+    if (!box) {
+        return;
+    }
+    const rots = [0, 90, 180, 270];
+    const cur = Number(box.rotate) || 0;
+    let i = rots.indexOf(cur);
+    if (i < 0) {
+        i = 0;
+    }
+    editor.updateSelected(rotationPatch(box, rots[(i + 1) % rots.length]));
+}
+
+function duplicateSelected() {
+    const box = editor.selected();
+    if (!box) {
+        return;
+    }
+    const copy = structuredClone(box);
+    delete copy.id;
+    copy.x += 8;
+    copy.y += 8;
+    copy.pristine = false;
+    editor.addBox(copy);
+}
+
+function enterMoveMode() {
+    if (!editor.selected()) {
+        return;
+    }
+    $("nudge-pad").focus();
+    markNudgeFocus();
+}
+
+function helpIsOpen() {
+    const el = $("help");
+    return !!(el && !el.hidden);
+}
+
+function openHelp() {
+    const el = $("help");
+    if (el) {
+        el.hidden = false;
+    }
+}
+
+function closeHelp() {
+    const el = $("help");
+    if (el) {
+        el.hidden = true;
+    }
+}
+
+function overlayOpen() {
+    return pickerOpen() || (typeof wifiUi !== "undefined" && wifiUi.isOpen()) ||
+        (typeof calUi !== "undefined" && calUi.isOpen()) ||
+        ($("wifi-sub") && !$("wifi-sub").hidden) || helpIsOpen();
+}
+
+function pickerOpen() {
+    return typeof picker !== "undefined" && picker.isOpen();
+}
+
+function updateStageKeys() {
+    const el = $("stage-keys");
+    if (!el) {
+        return;
+    }
+    if (editor.selected()) {
+        el.innerHTML =
+            "<span><kbd>m</kbd> move</span>" +
+            "<span><kbd>r</kbd> rotate</span>" +
+            "<span><kbd>d</kbd> duplicate</span>" +
+            "<span><kbd>←↑→↓</kbd> nudge</span>" +
+            "<span><kbd>⇧</kbd>+arrows resize</span>" +
+            "<span><kbd>Del</kbd> delete</span>" +
+            "<span><kbd>Esc</kbd> deselect</span>" +
+            "<span><kbd>?</kbd> all keys</span>";
+    } else {
+        el.innerHTML =
+            "<span><kbd>n</kbd> next</span>" +
+            "<span><kbd>N</kbd> prev</span>" +
+            "<span><kbd>Space</kbd> select</span>" +
+            "<span><kbd>?</kbd> all keys</span>";
+    }
+}
 
 function viewScale() {
     const wrap = $("stage-wrap");
@@ -523,11 +744,10 @@ function readForm() {
     if (h != null) {
         patch.height = h;
     }
-    if (rotateSwapsAxes(newRot) !== rotateSwapsAxes(box.rotate)) {
-        const nextW = patch.height != null ? patch.height : box.height;
-        const nextH = patch.width != null ? patch.width : box.width;
-        patch.width = nextW;
-        patch.height = nextH;
+    const swapped = rotationPatch(box, newRot);
+    if (swapped.width != null) {
+        patch.width = swapped.width;
+        patch.height = swapped.height;
     }
     if (box.type === "text") {
         Object.assign(patch, {
@@ -650,6 +870,12 @@ $("image-file").addEventListener("change", async (e) => {
 });
 
 $("del").addEventListener("click", () => editor.removeSelected());
+$("dup").addEventListener("click", () => duplicateSelected());
+$("undo").addEventListener("click", () => histUndo());
+$("redo").addEventListener("click", () => histRedo());
+$("help-btn").addEventListener("click", () => openHelp());
+$("help-close").addEventListener("click", () => closeHelp());
+$("help-backdrop").addEventListener("click", () => closeHelp());
 $("pane-close")?.addEventListener("click", () => editor.select(null));
 
 $("obj-next").addEventListener("click", () => editor.cyclePreview(1));
@@ -659,7 +885,10 @@ $("obj-select").addEventListener("click", () => editor.confirmPreview());
 let picoName = "";
 const picker = bindPicker({
     getDoc: () => toDocument(page, editor.boxes),
-    loadDoc: (objects) => editor.load(objects),
+    loadDoc: (objects) => {
+        editor.load(objects);
+        histReset();
+    },
     picoName: () => picoName,
     setPicoName: (name) => { picoName = name; },
     setStatus,
@@ -676,6 +905,7 @@ $("file").addEventListener("change", async (e) => {
     try {
         const text = await file.text();
         editor.load(fromDocument(JSON.parse(text)));
+        histReset();
         picoName = file.name.replace(/\.gz$/i, "");
         setStatus(`opened ${picoName}`, "ok");
     } catch (err) {
@@ -684,7 +914,40 @@ $("file").addEventListener("change", async (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-    if (picker.isOpen() || wifiUi.isOpen()) {
+    if (helpIsOpen()) {
+        if (e.key === "Escape" || e.key === "?" || e.key === "F1") {
+            e.preventDefault();
+            closeHelp();
+        }
+        return;
+    }
+    if (overlayOpen()) {
+        return;
+    }
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.altKey && e.key.toLowerCase() === "z") {
+        if (isPayloadTyping()) {
+            return;
+        }
+        e.preventDefault();
+        if (e.shiftKey) {
+            histRedo();
+        } else {
+            histUndo();
+        }
+        return;
+    }
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "x") {
+        if (isPayloadTyping()) {
+            return;
+        }
+        e.preventDefault();
+        histRedo();
+        return;
+    }
+    if (!isPayloadTyping() && (e.key === "?" || e.key === "F1")) {
+        e.preventDefault();
+        openHelp();
         return;
     }
     const box = editor.selected();
@@ -763,6 +1026,7 @@ document.addEventListener("keydown", (e) => {
         const delta = keys[e.key];
         if (delta) {
             e.preventDefault();
+            histBeginHold();
             if (e.shiftKey) {
                 resizeSelected(delta[0], delta[1]);
             } else {
@@ -779,8 +1043,30 @@ document.addEventListener("keydown", (e) => {
         e.preventDefault();
         editor.removeSelected();
     }
+    if (box && e.key === "d") {
+        e.preventDefault();
+        duplicateSelected();
+        return;
+    }
+    if (box && e.key === "m") {
+        e.preventDefault();
+        enterMoveMode();
+        return;
+    }
+    if (box && e.key === "r") {
+        e.preventDefault();
+        cycleRotation();
+        return;
+    }
     if (e.key === "Escape") {
         editor.select(null);
+    }
+});
+
+document.addEventListener("keyup", (e) => {
+    if (histHold && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" ||
+            e.key === "ArrowDown" || "hjklHJKL".includes(e.key))) {
+        histEndHold();
     }
 });
 
@@ -795,6 +1081,7 @@ $("nudge-pad").addEventListener("focusout", () => setTimeout(markNudgeFocus, 0))
         clearInterval(holdRep);
         holdWait = 0;
         holdRep = 0;
+        histEndHold();
     };
     $("nudge-pad").addEventListener("pointerdown", (e) => {
         const btn = e.target.closest(".nudge-btn");
@@ -805,8 +1092,10 @@ $("nudge-pad").addEventListener("focusout", () => setTimeout(markNudgeFocus, 0))
         const dx = Number(btn.dataset.dx) || 0;
         const dy = Number(btn.dataset.dy) || 0;
         $("nudge-pad").focus();
+        histBeginHold();
         nudgeSelected(dx, dy);
-        stopHold();
+        clearTimeout(holdWait);
+        clearInterval(holdRep);
         holdWait = setTimeout(() => {
             holdRep = setInterval(() => nudgeSelected(dx, dy), 50);
         }, 300);
@@ -825,6 +1114,7 @@ $("nudge-pad").addEventListener("focusout", () => setTimeout(markNudgeFocus, 0))
         clearInterval(holdRep);
         holdWait = 0;
         holdRep = 0;
+        histEndHold();
     };
     $("resize-pad").addEventListener("pointerdown", (e) => {
         const btn = e.target.closest(".nudge-btn");
@@ -834,8 +1124,10 @@ $("nudge-pad").addEventListener("focusout", () => setTimeout(markNudgeFocus, 0))
         e.preventDefault();
         const dw = Number(btn.dataset.dw) || 0;
         const dh = Number(btn.dataset.dh) || 0;
+        histBeginHold();
         resizeSelected(dw, dh);
-        stopHold();
+        clearTimeout(holdWait);
+        clearInterval(holdRep);
         holdWait = setTimeout(() => {
             holdRep = setInterval(() => resizeSelected(dw, dh), 50);
         }, 300);
@@ -987,6 +1279,8 @@ async function boot() {
     syncAdvanced();
     layoutGuides();
     restore();
+    histReset();
+    updateStageKeys();
     refreshStatus();
     try {
         applyMedia(await fetchMedia());

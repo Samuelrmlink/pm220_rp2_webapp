@@ -92,14 +92,26 @@ function clampBox(box, page) {
     if (h > page.height_dots) {
         h = page.height_dots;
     }
-    let left = Math.round((Number(box.x) || 0) - w / 2);
-    let top = Math.round((Number(box.y) || 0) - h / 2);
-    left = Math.max(0, Math.min(page.width_dots - w, left));
-    top = Math.max(0, Math.min(page.height_dots - h, top));
+    let cx = Number(box.x) || 0;
+    let cy = Number(box.y) || 0;
+    const minCx = w / 2;
+    const maxCx = page.width_dots - w / 2;
+    const minCy = h / 2;
+    const maxCy = page.height_dots - h / 2;
+    if (cx < minCx) {
+        cx = minCx;
+    } else if (cx > maxCx) {
+        cx = maxCx;
+    }
+    if (cy < minCy) {
+        cy = minCy;
+    } else if (cy > maxCy) {
+        cy = maxCy;
+    }
     box.width = w;
     box.height = h;
-    box.x = left + w / 2;
-    box.y = top + h / 2;
+    box.x = cx;
+    box.y = cy;
     delete box.x1;
     delete box.y1;
     delete box.x2;
@@ -371,6 +383,7 @@ export class Editor {
         const d = this.drag;
         const moved = e ? Math.hypot(e.clientX - d.px, e.clientY - d.py) : 0;
         this.drag = null;
+        this.onChange();
         if (d.mode === "move" && moved < 6) {
             this.onSelect(this.selected());
         }

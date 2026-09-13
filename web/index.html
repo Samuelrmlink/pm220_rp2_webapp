@@ -23,10 +23,13 @@
         <h1>PM220</h1>
         <button type="button" id="open">Open</button>
         <button type="button" id="save">Save</button>
+        <button type="button" id="undo" disabled>Undo</button>
+        <button type="button" id="redo" disabled>Redo</button>
         <button type="button" id="print" class="primary">Print</button>
         <input id="file" type="file" accept=".json,.pm220.json,application/json" hidden>
         <input id="image-file" type="file" accept="image/png,image/jpeg,image/*" hidden>
         <div class="header-right">
+            <button type="button" id="help-btn" aria-label="Keyboard shortcuts">?</button>
             <button type="button" id="calibrate">Calibrate</button>
             <button type="button" id="wifi-settings">WiFi Settings</button>
             <span id="status">connecting…</span>
@@ -164,6 +167,7 @@
                 <div class="crop-band" id="crop"></div>
                 <div class="safe-rect" id="safe"></div>
             </div>
+            <div id="stage-keys" class="stage-keys" aria-live="polite"></div>
         </div>
         <aside id="props">
             <div id="add-pane">
@@ -176,10 +180,8 @@
                         <button type="button" id="obj-select">Select</button>
                     </div>
                     <div class="kbd-hints">
-                        <p class="kbd-hints-title">Keyboard hints:</p>
-                        <p>n — Next</p>
-                        <p>N — Previous</p>
-                        <p>Space — Select</p>
+                        <p class="kbd-hints-title">Keyboard</p>
+                        <p>Shortcuts on the label · ? all keys</p>
                     </div>
                 </div>
                 <h2 class="obj-nav-title">Add object</h2>
@@ -320,10 +322,60 @@
                         </div>
                     </div>
                 </form>
-                <button type="button" id="del">Delete object</button>
+                <div class="obj-actions">
+                    <button type="button" id="dup">Duplicate</button>
+                    <button type="button" id="del">Delete object</button>
+                </div>
             </div>
         </aside>
     </main>
+    <div id="help" hidden>
+        <div class="picker-backdrop" id="help-backdrop"></div>
+        <div class="picker-panel help-panel" role="dialog" aria-labelledby="help-title">
+            <h2 id="help-title">Keyboard shortcuts</h2>
+            <div class="help-cols">
+                <section>
+                    <h3>Document</h3>
+                    <p><kbd>Ctrl</kbd>+<kbd>Z</kbd> Undo</p>
+                    <p><kbd>Ctrl</kbd>+<kbd>X</kbd> Redo</p>
+                    <p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> Redo</p>
+                </section>
+                <section>
+                    <h3>Browse (nothing selected)</h3>
+                    <p><kbd>n</kbd> Next object</p>
+                    <p><kbd>N</kbd> Previous object</p>
+                    <p><kbd>Space</kbd> / <kbd>Enter</kbd> Select</p>
+                </section>
+                <section>
+                    <h3>Object</h3>
+                    <p><kbd>m</kbd> Move (focus D-pad)</p>
+                    <p><kbd>r</kbd> Rotate 90°</p>
+                    <p><kbd>d</kbd> Duplicate</p>
+                    <p><kbd>Delete</kbd> / <kbd>Backspace</kbd> Delete</p>
+                    <p><kbd>Esc</kbd> Deselect</p>
+                </section>
+                <section>
+                    <h3>Move pad</h3>
+                    <p><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> Nudge</p>
+                    <p><kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd> Nudge</p>
+                    <p><kbd>Shift</kbd>+arrows Resize</p>
+                </section>
+                <section>
+                    <h3>Fields</h3>
+                    <p><kbd>Tab</kbd> / <kbd>n</kbd> Next field</p>
+                    <p><kbd>N</kbd> Previous field</p>
+                    <p>Arrows on numeric fields</p>
+                </section>
+                <section>
+                    <h3>Help</h3>
+                    <p><kbd>?</kbd> / <kbd>F1</kbd> This list</p>
+                </section>
+            </div>
+            <div class="picker-actions">
+                <button type="button" id="help-close">Close</button>
+            </div>
+        </div>
+    </div>
     <script type="module" src="app.js"></script>
 </body>
 </html>
