@@ -1,7 +1,7 @@
 /** Axis-aligned objects on the 384×240 label canvas. */
 
-import { boxOverflows, geom } from "./raster.js";
-import { migrateObject } from "./doc.js";
+import { aabb, boxOverflows, geom } from "./raster.js";
+import { VERSION, migrateObject } from "./doc.js";
 
 const MIN = 8;
 
@@ -9,13 +9,15 @@ let nextId = 1;
 
 function place(page, safe, w, h) {
     const pad = 16;
-    const x = (safe && safe.x0 != null ? safe.x0 : 32) + pad;
-    const y = (safe && safe.y0 != null ? safe.y0 : 32) + pad;
+    const left = (safe && safe.x0 != null ? safe.x0 : 32) + pad;
+    const top = (safe && safe.y0 != null ? safe.y0 : 32) + pad;
+    const width = Math.min(w, page.width_dots - left);
+    const height = Math.min(h, page.height_dots - top);
     return {
-        x,
-        y,
-        width: Math.min(w, page.width_dots - x),
-        height: Math.min(h, page.height_dots - y),
+        x: left + width / 2,
+        y: top + height / 2,
+        width,
+        height,
         rotate: 0,
     };
 }
@@ -76,11 +78,8 @@ export function defaultImage(page, safe, png) {
 }
 
 function clampBox(box, page) {
-    geom(box);
-    let x = Math.round(box.x);
-    let y = Math.round(box.y);
-    let w = Math.round(box.width);
-    let h = Math.round(box.height);
+    let w = Math.round(Number(box.width) || 0);
+    let h = Math.round(Number(box.height) || 0);
     if (w < MIN) {
         w = MIN;
     }
@@ -93,12 +92,14 @@ function clampBox(box, page) {
     if (h > page.height_dots) {
         h = page.height_dots;
     }
-    x = Math.max(0, Math.min(page.width_dots - w, x));
-    y = Math.max(0, Math.min(page.height_dots - h, y));
-    box.x = x;
-    box.y = y;
+    let left = Math.round((Number(box.x) || 0) - w / 2);
+    let top = Math.round((Number(box.y) || 0) - h / 2);
+    left = Math.max(0, Math.min(page.width_dots - w, left));
+    top = Math.max(0, Math.min(page.height_dots - h, top));
     box.width = w;
     box.height = h;
+    box.x = left + w / 2;
+    box.y = top + h / 2;
     delete box.x1;
     delete box.y1;
     delete box.x2;
@@ -218,7 +219,7 @@ export class Editor {
     load(boxes) {
         this.boxes = [];
         for (const b of boxes || []) {
-            const copy = migrateObject(b);
+            const copy = migrateObject(b, VERSION);
             if (!copy.id) {
                 copy.id = nextId++;
             }
@@ -236,7 +237,7 @@ export class Editor {
         const s = this.scale;
         this.overlay.replaceChildren();
         for (const box of this.boxes) {
-            const g = geom(box);
+            const r = aabb(box);
             const el = document.createElement("div");
             el.className = "tbox";
             el.dataset.id = String(box.id);
@@ -251,10 +252,10 @@ export class Editor {
             } else if (box.id === this.previewId) {
                 el.classList.add("preview");
             }
-            el.style.left = `${g.x * s}px`;
-            el.style.top = `${g.y * s}px`;
-            el.style.width = `${g.width * s}px`;
-            el.style.height = `${g.height * s}px`;
+            el.style.left = `${r.x * s}px`;
+            el.style.top = `${r.y * s}px`;
+            el.style.width = `${r.width * s}px`;
+            el.style.height = `${r.height * s}px`;
             el.style.zIndex = (box.id === this.selectedId || box.id === this.previewId) ? "2" : "1";
             el.addEventListener("pointerdown", (e) => this.onBoxDown(e, box, "move"));
             if (box.id === this.selectedId) {
@@ -274,13 +275,16 @@ export class Editor {
         e.preventDefault();
         this.select(box.id);
         const g = geom(box);
+        const r = aabb(box);
         this.drag = {
             id: box.id,
             mode,
-            x: g.x,
-            y: g.y,
-            width: g.width,
-            height: g.height,
+            cx: g.x,
+            cy: g.y,
+            x: r.x,
+            y: r.y,
+            width: r.width,
+            height: r.height,
             px: e.clientX,
             py: e.clientY,
             s: this.scale,
@@ -300,10 +304,11 @@ export class Editor {
         const dy = Math.round((e.clientY - this.drag.py) / this.drag.s);
         const d = this.drag;
         if (d.mode === "move") {
-            box.x = Math.max(0, Math.min(this.page.width_dots - d.width, d.x + dx));
-            box.y = Math.max(0, Math.min(this.page.height_dots - d.height, d.y + dy));
+            box.x = d.cx + dx;
+            box.y = d.cy + dy;
             box.width = d.width;
             box.height = d.height;
+            clampBox(box, this.page);
         } else {
             let x1 = d.x;
             let y1 = d.y;
@@ -327,33 +332,33 @@ export class Editor {
             if (y2 < y1) {
                 const t = y1; y1 = y2; y2 = t;
             }
-            box.x = x1;
-            box.y = y1;
-            box.width = x2 - x1 + 1;
-            box.height = y2 - y1 + 1;
+            let w = x2 - x1 + 1;
+            let h = y2 - y1 + 1;
             if (box.type === "qr") {
-                const size = Math.max(MIN, Math.max(box.width, box.height));
+                const size = Math.max(MIN, Math.max(w, h));
                 if (d.mode.indexOf("w") >= 0) {
-                    box.x = x2 - size + 1;
+                    x1 = x2 - size + 1;
+                } else {
+                    x2 = x1 + size - 1;
                 }
                 if (d.mode.indexOf("n") >= 0) {
-                    box.y = y2 - size + 1;
+                    y1 = y2 - size + 1;
+                } else {
+                    y2 = y1 + size - 1;
                 }
+                w = size;
+                h = size;
+            }
+            box.width = w;
+            box.height = h;
+            box.x = x1 + w / 2;
+            box.y = y1 + h / 2;
+            if (box.type === "qr") {
+                const size = Math.min(box.width, box.height);
                 box.width = size;
                 box.height = size;
             }
             clampBox(box, this.page);
-            if (box.type === "qr") {
-                const size = Math.min(box.width, box.height);
-                if (d.mode.indexOf("w") >= 0) {
-                    box.x = box.x + box.width - size;
-                }
-                if (d.mode.indexOf("n") >= 0) {
-                    box.y = box.y + box.height - size;
-                }
-                box.width = size;
-                box.height = size;
-            }
         }
         this.syncDom();
         this.onChange();

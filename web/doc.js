@@ -3,10 +3,30 @@
 import { geom } from "./raster.js";
 
 export const FORMAT = "pm220-label";
-export const VERSION = 1;
+export const VERSION = 2;
 
-export function migrateObject(raw) {
+function adoptLegacyCorners(obj) {
+    if (obj.x == null && obj.x1 != null) {
+        obj.x = obj.x1;
+        obj.y = obj.y1;
+        obj.width = obj.x2 - obj.x1 + 1;
+        obj.height = obj.y2 - obj.y1 + 1;
+    }
+}
+
+function aabbOriginToCenter(obj) {
+    const w = Math.max(1, Number(obj.width) || 1);
+    const h = Math.max(1, Number(obj.height) || 1);
+    obj.x = Math.round((Number(obj.x) || 0) + w / 2);
+    obj.y = Math.round((Number(obj.y) || 0) + h / 2);
+}
+
+export function migrateObject(raw, docVersion = VERSION) {
     const obj = { ...raw };
+    adoptLegacyCorners(obj);
+    if ((Number(docVersion) || 1) < 2) {
+        aabbOriginToCenter(obj);
+    }
     geom(obj);
     delete obj.x1;
     delete obj.y1;
@@ -35,7 +55,7 @@ export function toDocument(page, objects) {
             height_mm: page.height_mm || 30,
         },
         objects: objects.map((o) => {
-            const copy = migrateObject(o);
+            const copy = migrateObject(o, VERSION);
             delete copy._pending;
             return copy;
         }),
@@ -50,7 +70,8 @@ export function fromDocument(data) {
     if (!Array.isArray(list)) {
         throw new Error("label file has no objects list");
     }
-    return list.map(migrateObject);
+    const ver = Array.isArray(data) ? 1 : (Number(data.version) || 1);
+    return list.map((o) => migrateObject(o, ver));
 }
 
 export function downloadDocument(doc, name) {

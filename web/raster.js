@@ -2,19 +2,35 @@
 
 export const FONT_STACK = "Arial, Helvetica, sans-serif";
 
-/** Canonical geometry. Migrates legacy x1/y1/x2/y2 in place. */
+/** Center + canvas-aligned size. width is always along X, height along Y. */
 export function geom(obj) {
-    if (obj.x == null && obj.x1 != null) {
-        obj.x = obj.x1;
-        obj.y = obj.y1;
-        obj.width = obj.x2 - obj.x1 + 1;
-        obj.height = obj.y2 - obj.y1 + 1;
-    }
     const x = Number(obj.x) || 0;
     const y = Number(obj.y) || 0;
     const width = Math.max(1, Number(obj.width) || 1);
     const height = Math.max(1, Number(obj.height) || 1);
-    return { x, y, width, height, x1: x, y1: y, x2: x + width - 1, y2: y + height - 1 };
+    return { x, y, width, height };
+}
+
+/** Top-left AABB covering the object on the canvas. */
+export function aabb(obj) {
+    const g = geom(obj);
+    const x = Math.round(g.x - g.width / 2);
+    const y = Math.round(g.y - g.height / 2);
+    return {
+        x,
+        y,
+        width: g.width,
+        height: g.height,
+        x1: x,
+        y1: y,
+        x2: x + g.width - 1,
+        y2: y + g.height - 1,
+    };
+}
+
+export function rotateSwapsAxes(rot) {
+    const r = ((Number(rot) || 0) % 360 + 360) % 360;
+    return r === 90 || r === 270;
 }
 
 export function boxWidth(box) {
@@ -25,10 +41,10 @@ export function boxHeight(box) {
     return geom(box).height;
 }
 
-/** Layout size in the unrotated text space. */
+/** Layout size in the unrotated content space. */
 export function layoutSize(box) {
     const g = geom(box);
-    if (box.rotate === 90 || box.rotate === 270) {
+    if (rotateSwapsAxes(box.rotate)) {
         return { w: g.height, h: g.width };
     }
     return { w: g.width, h: g.height };
@@ -38,15 +54,15 @@ export function boxOverflows(box, safe) {
     if (!box || box.ignoreSafe || !safe) {
         return false;
     }
-    const g = geom(box);
-    return g.x1 < safe.x0 || g.y1 < safe.y0 || g.x2 > safe.x1 || g.y2 > safe.y1;
+    const r = aabb(box);
+    return r.x1 < safe.x0 || r.y1 < safe.y0 || r.x2 > safe.x1 || r.y2 > safe.y1;
 }
 
 export function withBox(ctx, obj, fn) {
     const g = geom(obj);
     const ls = layoutSize(obj);
     ctx.save();
-    ctx.translate(g.x + g.width / 2, g.y + g.height / 2);
+    ctx.translate(g.x, g.y);
     ctx.rotate((Number(obj.rotate) || 0) * Math.PI / 180);
     ctx.translate(-ls.w / 2, -ls.h / 2);
     ctx.beginPath();
@@ -56,56 +72,25 @@ export function withBox(ctx, obj, fn) {
     ctx.restore();
 }
 
-function rotateCrisp(src, turns) {
-    turns = ((turns % 4) + 4) % 4;
-    let cur = src;
-    for (let t = 0; t < turns; t++) {
-        const w = cur.width;
-        const h = cur.height;
-        const s = cur.getContext("2d").getImageData(0, 0, w, h);
-        const next = document.createElement("canvas");
-        next.width = h;
-        next.height = w;
-        const out = next.getContext("2d").createImageData(h, w);
-        for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                const si = (y * w + x) * 4;
-                const nx = h - 1 - y;
-                const ny = x;
-                const di = (ny * h + nx) * 4;
-                out.data[di] = s.data[si];
-                out.data[di + 1] = s.data[si + 1];
-                out.data[di + 2] = s.data[si + 2];
-                out.data[di + 3] = s.data[si + 3];
-            }
-        }
-        next.getContext("2d").putImageData(out, 0, 0);
-        cur = next;
-    }
-    return cur;
-}
-
 /**
- * Fit a 1-bit source into the object box with nearest-neighbor sampling.
- * Scale is continuous (fills the box); each dest dot is still fully black or white.
+ * Fit a 1-bit source into the unrotated layout box with nearest-neighbor sampling.
+ * Rotation is applied by withBox so width/height stay canvas-axis-aligned.
  */
 export function blitCrisp(ctx, obj, src) {
-    const g = geom(obj);
-    const rot = ((Number(obj.rotate) || 0) % 360 + 360) % 360;
-    const turns = Math.round(rot / 90) % 4;
-    const bmp = turns ? rotateCrisp(src, turns) : src;
-    const fit = Math.min(g.width / bmp.width, g.height / bmp.height);
+    const ls = layoutSize(obj);
+    const fit = Math.min(ls.w / src.width, ls.h / src.height);
     const scale = obj.pixelPerfect ? Math.max(1, Math.floor(fit)) : fit;
-    const dw = Math.max(1, Math.round(bmp.width * scale));
-    const dh = Math.max(1, Math.round(bmp.height * scale));
-    const dx = g.x + Math.floor((g.width - dw) / 2);
-    const dy = g.y + Math.floor((g.height - dh) / 2);
-    const srcImg = bmp.getContext("2d").getImageData(0, 0, bmp.width, bmp.height);
-    const dest = ctx.createImageData(dw, dh);
+    const dw = Math.max(1, Math.round(src.width * scale));
+    const dh = Math.max(1, Math.round(src.height * scale));
+    const tmp = document.createElement("canvas");
+    tmp.width = dw;
+    tmp.height = dh;
+    const srcImg = src.getContext("2d").getImageData(0, 0, src.width, src.height);
+    const dest = tmp.getContext("2d").createImageData(dw, dh);
     const s = srcImg.data;
     const d = dest.data;
-    const sw = bmp.width;
-    const sh = bmp.height;
+    const sw = src.width;
+    const sh = src.height;
     for (let y = 0; y < dh; y++) {
         const sy = Math.min(sh - 1, Math.floor((y + 0.5) * sh / dh));
         for (let x = 0; x < dw; x++) {
@@ -118,7 +103,13 @@ export function blitCrisp(ctx, obj, src) {
             d[di + 3] = 255;
         }
     }
-    ctx.putImageData(dest, dx, dy);
+    tmp.getContext("2d").putImageData(dest, 0, 0);
+    withBox(ctx, obj, (c, layout) => {
+        const dx = Math.floor((layout.w - dw) / 2);
+        const dy = Math.floor((layout.h - dh) / 2);
+        c.imageSmoothingEnabled = false;
+        c.drawImage(tmp, dx, dy);
+    });
 }
 
 function fontCss(box, size) {

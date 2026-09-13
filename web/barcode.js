@@ -110,7 +110,7 @@ export function drawBarcode(ctx, obj) {
     const size = Math.max(4, Number(obj.textSize) || 12);
     const off = obj.textOffset == null ? 7 : Number(obj.textOffset);
     ctx.save();
-    ctx.translate(g.x + g.width / 2, g.y + g.height / 2);
+    ctx.translate(g.x, g.y);
     ctx.rotate((Number(obj.rotate) || 0) * Math.PI / 180);
     ctx.translate(-ls.w / 2, -ls.h / 2);
     ctx.font = `${size}px ${FONT_STACK}`;

@@ -1,6 +1,6 @@
 import { apiBase, fetchMedia, fetchStatus, postPrint } from "./api.js";
 import { Editor, defaultBarcode, defaultImage, defaultQr, defaultText } from "./editor.js";
-import { boxOverflows, rasterize } from "./raster.js";
+import { boxOverflows, rasterize, rotateSwapsAxes } from "./raster.js";
 import { fromDocument, toDocument } from "./doc.js";
 import { bindPicker } from "./files.js";
 import { bindWifiSettings } from "./wifi.js";
@@ -502,8 +502,9 @@ function readForm() {
     if (!box) {
         return {};
     }
+    const newRot = Number($("rotate").value);
     const patch = {
-        rotate: Number($("rotate").value),
+        rotate: newRot,
         ignoreSafe: $("ignore-safe").checked,
     };
     const x = parseIntField("ox");
@@ -521,6 +522,12 @@ function readForm() {
     }
     if (h != null) {
         patch.height = h;
+    }
+    if (rotateSwapsAxes(newRot) !== rotateSwapsAxes(box.rotate)) {
+        const nextW = patch.height != null ? patch.height : box.height;
+        const nextH = patch.width != null ? patch.width : box.width;
+        patch.width = nextW;
+        patch.height = nextH;
     }
     if (box.type === "text") {
         Object.assign(patch, {
