@@ -36,6 +36,25 @@ const TITLES = {
 const $ = (id) => document.getElementById(id);
 const INT_RE = /^-?\d+$/;
 
+const NAV_KEYS = new Set([
+    "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+    "Home", "End", "PageUp", "PageDown", "F1",
+]);
+
+document.addEventListener("keydown", (e) => {
+    if (NAV_KEYS.has(e.key) || e.key === "?" ) {
+        document.documentElement.classList.add("kbd-nav");
+        return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+        document.documentElement.classList.add("kbd-nav");
+        return;
+    }
+    if (e.key.length === 1 && "hjklnNq".includes(e.key)) {
+        document.documentElement.classList.add("kbd-nav");
+    }
+}, true);
+
 const VIEWPORT_LOCK =
     "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
 
@@ -375,16 +394,56 @@ function enterMoveMode() {
     markNudgeFocus();
 }
 
+let helpIndex = 0;
+let helpRegion = "list";
+
 function helpIsOpen() {
     const el = $("help");
     return !!(el && !el.hidden);
 }
 
+function helpSections() {
+    return [...document.querySelectorAll("#help .help-cols section")];
+}
+
+function helpColCount() {
+    const cols = $("help")?.querySelector(".help-cols");
+    if (!cols) {
+        return 1;
+    }
+    const n = getComputedStyle(cols).gridTemplateColumns.split(" ").filter(Boolean).length;
+    return n > 1 ? n : 1;
+}
+
+function paintHelpNav() {
+    const secs = helpSections();
+    if (helpIndex >= secs.length) {
+        helpIndex = Math.max(0, secs.length - 1);
+    }
+    secs.forEach((s, i) => s.classList.toggle("current", helpRegion === "list" && i === helpIndex));
+    const closeBtn = $("help-close");
+    if (closeBtn) {
+        closeBtn.classList.toggle("nav", helpRegion === "actions");
+    }
+    if (helpRegion === "list") {
+        secs[helpIndex]?.scrollIntoView({ block: "nearest" });
+    }
+}
+
 function openHelp() {
     const el = $("help");
-    if (el) {
-        el.hidden = false;
+    if (!el) {
+        return;
     }
+    el.hidden = false;
+    helpIndex = 0;
+    helpRegion = "list";
+    const panel = el.querySelector(".picker-panel");
+    if (panel) {
+        panel.setAttribute("tabindex", "-1");
+        panel.focus();
+    }
+    paintHelpNav();
 }
 
 function closeHelp() {
@@ -392,6 +451,47 @@ function closeHelp() {
     if (el) {
         el.hidden = true;
     }
+}
+
+function helpMove(dx, dy) {
+    const secs = helpSections();
+    const n = secs.length;
+    if (!n) {
+        return;
+    }
+    const cols = helpColCount();
+    if (helpRegion === "actions") {
+        if (dy < 0 || dx < 0) {
+            helpRegion = "list";
+            helpIndex = n - 1;
+            paintHelpNav();
+        }
+        return;
+    }
+    const col = helpIndex % cols;
+    const row = Math.floor(helpIndex / cols);
+    if (dx) {
+        const nextCol = col + dx;
+        if (nextCol >= 0 && nextCol < cols) {
+            const next = row * cols + nextCol;
+            if (next < n) {
+                helpIndex = next;
+            }
+        }
+    } else if (dy > 0) {
+        const next = helpIndex + cols;
+        if (next < n) {
+            helpIndex = next;
+        } else {
+            helpRegion = "actions";
+        }
+    } else if (dy < 0) {
+        const next = helpIndex - cols;
+        if (next >= 0) {
+            helpIndex = next;
+        }
+    }
+    paintHelpNav();
 }
 
 function overlayOpen() {
@@ -417,7 +517,7 @@ function updateStageKeys() {
             "<span><kbd>←↑→↓</kbd> nudge</span>" +
             "<span><kbd>⇧</kbd>+arrows resize</span>" +
             "<span><kbd>Del</kbd> delete</span>" +
-            "<span><kbd>Esc</kbd> deselect</span>" +
+            "<span><kbd>Esc</kbd>/<kbd>q</kbd> deselect</span>" +
             "<span><kbd>?</kbd> all keys</span>";
     } else {
         el.innerHTML =
@@ -918,9 +1018,44 @@ $("file").addEventListener("change", async (e) => {
 
 document.addEventListener("keydown", (e) => {
     if (helpIsOpen()) {
-        if (e.key === "Escape" || e.key === "?" || e.key === "F1") {
+        if (e.key === "Escape" || e.key === "q" || e.key === "?" || e.key === "F1") {
             e.preventDefault();
             closeHelp();
+            return;
+        }
+        if (e.key === "Tab") {
+            e.preventDefault();
+            helpRegion = e.shiftKey
+                ? (helpRegion === "actions" ? "list" : "actions")
+                : (helpRegion === "list" ? "actions" : "list");
+            paintHelpNav();
+            return;
+        }
+        if (e.key === "ArrowDown" || e.key === "j") {
+            e.preventDefault();
+            helpMove(0, 1);
+            return;
+        }
+        if (e.key === "ArrowUp" || e.key === "k") {
+            e.preventDefault();
+            helpMove(0, -1);
+            return;
+        }
+        if (e.key === "ArrowRight" || e.key === "l") {
+            e.preventDefault();
+            helpMove(1, 0);
+            return;
+        }
+        if (e.key === "ArrowLeft" || e.key === "h") {
+            e.preventDefault();
+            helpMove(-1, 0);
+            return;
+        }
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (helpRegion === "actions") {
+                closeHelp();
+            }
         }
         return;
     }
@@ -1033,7 +1168,7 @@ document.addEventListener("keydown", (e) => {
                 return;
             }
         }
-        if (e.key === "Escape") {
+        if (e.key === "Escape" || (e.key === "q" && !isPayloadTyping())) {
             e.target.blur();
             editor.select(null);
         }
@@ -1089,7 +1224,7 @@ document.addEventListener("keydown", (e) => {
         cycleRotation();
         return;
     }
-    if (e.key === "Escape") {
+    if (e.key === "Escape" || e.key === "q") {
         editor.select(null);
     }
 });

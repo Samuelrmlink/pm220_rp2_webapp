@@ -745,7 +745,7 @@ export function bindWifiSettings({ setStatus }) {
     });
     document.addEventListener("keydown", (e) => {
         if (!sub.hidden) {
-            if (e.key === "Escape") {
+            if (e.key === "Escape" || (e.key === "q" && !typingIn(e.target))) {
                 e.preventDefault();
                 closeSub();
             } else if (e.key === "Enter" && e.target !== $("wifi-sub-cancel")) {
@@ -757,7 +757,7 @@ export function bindWifiSettings({ setStatus }) {
         if (overlay.hidden) {
             return;
         }
-        if (e.key === "Escape") {
+        if (e.key === "Escape" || (e.key === "q" && !typingIn(e.target))) {
             e.preventDefault();
             close();
             return;

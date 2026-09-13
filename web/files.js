@@ -408,7 +408,8 @@ export function bindPicker({ getDoc, loadDoc, picoName, setPicoName, setStatus }
         if (overlay.hidden) {
             return;
         }
-        if (e.key === "Escape" && e.target.className !== "picker-rename") {
+        if ((e.key === "Escape" || (e.key === "q" && !typingIn(e.target))) &&
+                e.target.className !== "picker-rename") {
             e.preventDefault();
             close();
             return;

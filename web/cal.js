@@ -261,7 +261,7 @@ export function bindCalibrate({ setStatus, applyMedia }) {
         if (overlay.hidden) {
             return;
         }
-        if (e.key === "Escape") {
+        if (e.key === "Escape" || e.key === "q") {
             e.preventDefault();
             close();
             return;

@@ -138,6 +138,31 @@ main {
     color: #fff;
 }
 
+@media (max-width: 900px), (hover: none) and (pointer: coarse) {
+    html:not(.kbd-nav) .stage-keys { display: none; }
+    html:not(.kbd-nav) .wifi-tabs.nav,
+    html:not(.kbd-nav) .help-cols section.current,
+    html:not(.kbd-nav) #picker-list li.current,
+    html:not(.kbd-nav) .picker-file.nav,
+    html:not(.kbd-nav) .picker-row-actions button.nav,
+    html:not(.kbd-nav) .picker-actions button.nav,
+    html:not(.kbd-nav) .picker-actions button:focus,
+    html:not(.kbd-nav) .picker-pc-label.nav,
+    html:not(.kbd-nav) .wifi-list li.current,
+    html:not(.kbd-nav) .wifi-pane .nav-field,
+    html:not(.kbd-nav) .wifi-known-actions button.nav,
+    html:not(.kbd-nav) #wifi-scan-btn.nav-field,
+    html:not(.kbd-nav) #wifi-start-ap.nav-field,
+    html:not(.kbd-nav) #wifi-save.nav,
+    html:not(.kbd-nav) #wifi-close.nav {
+        outline: none;
+    }
+    html:not(.kbd-nav) .help-cols section.current,
+    html:not(.kbd-nav) #picker-list li.current {
+        background: transparent;
+    }
+}
+
 .stage {
     position: relative;
     flex: none;
@@ -262,6 +287,9 @@ main {
 @media (hover: hover) and (pointer: fine) {
     .kbd-hints { display: block; }
 }
+
+html.kbd-nav .kbd-hints { display: block; }
+html.kbd-nav .stage-keys { display: flex; }
 
 .handle {
     position: absolute;
@@ -664,6 +692,16 @@ aside .empty {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px 18px;
+}
+
+.help-cols section {
+    padding: 6px 8px;
+    border-radius: 3px;
+}
+
+.help-cols section.current {
+    outline: 1px solid var(--accent);
+    background: #2a3544;
 }
 
 .help-cols h3 {
